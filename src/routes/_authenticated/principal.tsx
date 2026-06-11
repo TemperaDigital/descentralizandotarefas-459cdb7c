@@ -268,6 +268,29 @@ function Principal() {
           )}
         </CollapsibleContent>
       </Collapsible>
+
+      <Collapsible open={showDone} onOpenChange={setShowDone}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="w-full justify-between">
+            <span>Concluídas hoje ({doneToday.length})</span>
+            {showDone ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-3 mt-3">
+          {doneToday.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma tarefa concluída hoje ainda.</p>
+          ) : (
+            doneToday.map((t) => (
+              <TaskCard
+                key={t.id}
+                task={t}
+                onToggle={(task, solucao) => toggleMutation.mutate({ task, solucao })}
+                onDelete={(task) => deleteMutation.mutate(task)}
+              />
+            ))
+          )}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
