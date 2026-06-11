@@ -54,11 +54,16 @@ function Principal() {
   const upcoming = sortTasks(filtered.filter((t) => t.data > today && t.data <= next7ISO));
 
   const toggleMutation = useMutation({
-    mutationFn: async (task: Task) => {
+    mutationFn: async ({ task, solucao }: { task: Task; solucao?: string }) => {
       const newStatus = task.status === "pendente" ? "concluida" : "pendente";
+      const update: Record<string, unknown> = {
+        status: newStatus,
+        concluida_em: newStatus === "concluida" ? new Date().toISOString() : null,
+      };
+      if (newStatus === "concluida" && solucao !== undefined) update.solucao = solucao;
       const { error } = await supabase
         .from("tasks")
-        .update({ status: newStatus, concluida_em: newStatus === "concluida" ? new Date().toISOString() : null })
+        .update(update)
         .eq("id", task.id);
       if (error) throw error;
       // Auto-create next occurrence for recurring tasks when marking as complete
@@ -81,7 +86,10 @@ function Principal() {
         if (e2) throw e2;
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: () => {
+      toast.success("Tarefa concluída");
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
     onError: (e: Error) => toast.error("Erro", { description: e.message }),
   });
 
@@ -227,7 +235,7 @@ function Principal() {
             <TaskCard
               key={t.id}
               task={t}
-              onToggle={(task) => toggleMutation.mutate(task)}
+              onToggle={(task, solucao) => toggleMutation.mutate({ task, solucao })}
               onDelete={(task) => deleteMutation.mutate(task)}
               onCopy={() => toast.success("Copiado")}
             />
@@ -250,7 +258,7 @@ function Principal() {
               <TaskCard
                 key={t.id}
                 task={t}
-                onToggle={(task) => toggleMutation.mutate(task)}
+                onToggle={(task, solucao) => toggleMutation.mutate({ task, solucao })}
                 onDelete={(task) => deleteMutation.mutate(task)}
               />
             ))
