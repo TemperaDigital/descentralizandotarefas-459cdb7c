@@ -29,24 +29,6 @@ export type Database = {
         }
         Relationships: []
       }
-      google_calendar_tokens: {
-        Row: {
-          connected_at: string
-          connection_api_key: string
-          user_id: string
-        }
-        Insert: {
-          connected_at?: string
-          connection_api_key: string
-          user_id: string
-        }
-        Update: {
-          connected_at?: string
-          connection_api_key?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       profiles: {
         Row: {
           avatar_url: string | null
