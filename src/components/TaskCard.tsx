@@ -1,14 +1,18 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Copy, Pencil, Trash2, Mail, MessageCircle, AlertTriangle, Repeat, Clock } from "lucide-react";
+import { Copy, Pencil, Trash2, Mail, MessageCircle, AlertTriangle, Repeat, Clock, Siren } from "lucide-react";
 import { priorityClasses, PRIORITY_LABEL, RECURRENCE_LABEL, isOverdueOrSoon, type Task } from "@/lib/task-utils";
 import { Link } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 interface Props {
   task: Task;
-  onToggle: (task: Task) => void;
+  onToggle: (task: Task, solucao?: string) => void;
   onDelete: (task: Task) => void;
   onCopy?: (task: Task) => void;
 }
@@ -16,6 +20,8 @@ interface Props {
 export function TaskCard({ task, onToggle, onDelete, onCopy }: Props) {
   const overdue = task.status === "pendente" && isOverdueOrSoon(task.prazo);
   const urgent = task.prioridade === "altissima" || task.prioridade === "alta";
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [solucao, setSolucao] = useState(task.solucao ?? "");
 
   function formatDeadline(dt: string | null): string {
     if (!dt) return "Sem prazo";
@@ -44,19 +50,36 @@ export function TaskCard({ task, onToggle, onDelete, onCopy }: Props) {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   }
 
+  function handleCheckbox() {
+    if (task.status === "pendente") {
+      setCompleteOpen(true);
+    } else {
+      onToggle(task);
+    }
+  }
+
+  function confirmComplete() {
+    onToggle(task, solucao.trim() || undefined);
+    setCompleteOpen(false);
+  }
+
   return (
+    <>
     <Card
-      className={`p-4 bg-card ${priorityClasses(task.prioridade)} ${overdue && urgent ? "pulse-alert" : ""}`}
+      className={`p-4 bg-card ${priorityClasses(task.prioridade)} ${urgent && task.status === "pendente" ? "pulse-alert" : ""}`}
     >
       <div className="flex items-start gap-3">
         <Checkbox
           checked={task.status === "concluida"}
-          onCheckedChange={() => onToggle(task)}
+          onCheckedChange={handleCheckbox}
           className="mt-1"
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 flex-wrap">
-            <h3 className={`leading-tight ${task.status === "concluida" ? "line-through opacity-60" : ""}`}>
+            <h3 className={`leading-tight flex items-center gap-2 ${task.status === "concluida" ? "line-through opacity-60" : ""}`}>
+              {urgent && task.status === "pendente" && (
+                <Siren className="h-5 w-5 siren-blink shrink-0" aria-label="Alerta de prioridade" />
+              )}
               {task.titulo}
             </h3>
             <div className="flex gap-1 flex-wrap">
@@ -97,5 +120,31 @@ export function TaskCard({ task, onToggle, onDelete, onCopy }: Props) {
         </div>
       </div>
     </Card>
+    <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Concluir tarefa</DialogTitle>
+          <DialogDescription>
+            Descreva a solução dada para "{task.titulo}". Esse texto fica salvo no histórico.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor={`sol-${task.id}`}>Solução / observações</Label>
+          <Textarea
+            id={`sol-${task.id}`}
+            rows={5}
+            value={solucao}
+            onChange={(e) => setSolucao(e.target.value)}
+            placeholder="Como a tarefa foi resolvida?"
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCompleteOpen(false)}>Cancelar</Button>
+          <Button onClick={confirmComplete}>Marcar como concluída</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
