@@ -77,10 +77,7 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) {
-      const msg = /autorizado/i.test(error.message)
-        ? "Este e-mail não está autorizado a usar o Planejador."
-        : error.message;
-      toast.error("Erro ao criar conta", { description: msg });
+      toast.error("Erro ao criar conta", { description: error.message });
       return;
     }
     toast.success("Conta criada", { description: "Verifique seu e-mail para confirmar." });
@@ -110,7 +107,7 @@ function AuthPage() {
             <CalendarCheck className="h-7 w-7 text-primary" />
           </div>
           <h1 className="text-2xl font-bold">Planejador de Tarefas</h1>
-          <p className="text-sm text-muted-foreground">Acesso restrito aos usuários autorizados</p>
+          <p className="text-sm text-muted-foreground">Crie sua conta e organize suas tarefas</p>
         </div>
 
         <Card className="p-6">
@@ -188,7 +185,7 @@ function AuthPage() {
                   <Input id="name" required value={fullName} onChange={(e) => setFullName(e.target.value)} />
                 </div>
                 <div>
-                  <Label htmlFor="email-s">E-mail autorizado</Label>
+                  <Label htmlFor="email-s">E-mail</Label>
                   <Input id="email-s" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
                 <div>
@@ -204,7 +201,7 @@ function AuthPage() {
           </Tabs>
         </Card>
         <p className="text-xs text-muted-foreground text-center mt-4">
-          Apenas e-mails da lista autorizada conseguem entrar.
+          Aberto a qualquer usuário. Use "Esqueci minha senha" para redefinir o acesso.
         </p>
       </div>
     </div>
