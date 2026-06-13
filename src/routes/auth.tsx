@@ -151,7 +151,7 @@ function AuthPage() {
             <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">ou com e-mail</span></div>
           </div>
 
-          <Tabs value={tab === "forgot" ? "login" : tab} onValueChange={(v) => setTab(v as typeof tab)}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
             <TabsList className="grid grid-cols-2 w-full">
               <TabsTrigger value="login">Entrar</TabsTrigger>
               <TabsTrigger value="signup">Criar conta</TabsTrigger>
