@@ -111,6 +111,26 @@ function AuthPage() {
         </div>
 
         <Card className="p-6">
+          {tab === "forgot" ? (
+            <form onSubmit={handleForgot} className="space-y-3">
+              <h2 className="font-semibold">Redefinir senha</h2>
+              <p className="text-sm text-muted-foreground">
+                Informe seu e-mail. Enviaremos um link para você criar uma nova senha.
+              </p>
+              <div>
+                <Label htmlFor="email-fp">E-mail</Label>
+                <Input id="email-fp" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Enviar instruções
+              </Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setTab("login")}>
+                Voltar
+              </Button>
+            </form>
+          ) : (
+          <>
           <Button
             type="button"
             variant="outline"
@@ -131,29 +151,14 @@ function AuthPage() {
             <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">ou com e-mail</span></div>
           </div>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+          <Tabs value={tab === "forgot" ? "login" : tab} onValueChange={(v) => setTab(v as typeof tab)}>
             <TabsList className="grid grid-cols-2 w-full">
               <TabsTrigger value="login">Entrar</TabsTrigger>
               <TabsTrigger value="signup">Criar conta</TabsTrigger>
             </TabsList>
 
             <TabsContent value="login">
-              {tab === "forgot" ? (
-                <form onSubmit={handleForgot} className="space-y-3 mt-4">
-                  <div>
-                    <Label htmlFor="email-fp">E-mail</Label>
-                    <Input id="email-fp" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    Enviar instruções
-                  </Button>
-                  <Button type="button" variant="ghost" className="w-full" onClick={() => setTab("login")}>
-                    Voltar
-                  </Button>
-                </form>
-              ) : (
-                <form onSubmit={handleLogin} className="space-y-3 mt-4">
+              <form onSubmit={handleLogin} className="space-y-3 mt-4">
                   <div>
                     <Label htmlFor="email">E-mail</Label>
                     <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -174,8 +179,7 @@ function AuthPage() {
                   <button type="button" className="text-sm text-primary hover:underline w-full text-center" onClick={() => setTab("forgot")}>
                     Esqueci minha senha
                   </button>
-                </form>
-              )}
+              </form>
             </TabsContent>
 
             <TabsContent value="signup">
@@ -199,6 +203,8 @@ function AuthPage() {
               </form>
             </TabsContent>
           </Tabs>
+          </>
+          )}
         </Card>
         <p className="text-xs text-muted-foreground text-center mt-4">
           Aberto a qualquer usuário. Use "Esqueci minha senha" para redefinir o acesso.
