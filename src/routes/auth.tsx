@@ -77,10 +77,7 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) {
-      const msg = /autorizado/i.test(error.message)
-        ? "Este e-mail não está autorizado a usar o Planejador."
-        : error.message;
-      toast.error("Erro ao criar conta", { description: msg });
+      toast.error("Erro ao criar conta", { description: error.message });
       return;
     }
     toast.success("Conta criada", { description: "Verifique seu e-mail para confirmar." });
