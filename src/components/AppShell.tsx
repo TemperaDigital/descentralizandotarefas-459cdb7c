@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ListChecks, PlusCircle, History, Settings, LogOut, CalendarCheck, CalendarDays, Workflow } from "lucide-react";
+import { ListChecks, PlusCircle, History, Settings, LogOut, CalendarCheck, CalendarDays, Workflow, StickyNote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ const NAV = [
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/cadastro", label: "Nova tarefa", icon: PlusCircle },
   { to: "/processos", label: "Processos", icon: Workflow },
+  { to: "/anotacoes", label: "Anotações", icon: StickyNote },
   { to: "/historico", label: "Histórico", icon: History },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
