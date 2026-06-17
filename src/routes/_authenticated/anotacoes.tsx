@@ -74,6 +74,7 @@ function AnotacoesPage() {
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showOlder, setShowOlder] = useState(false);
 
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ["notes"],
@@ -86,6 +87,13 @@ function AnotacoesPage() {
   });
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
+
+  // Pre-select most recent note when nothing is selected
+  useEffect(() => {
+    if (!selectedId && notes.length > 0 && typeof window !== "undefined" && window.innerWidth >= 768) {
+      setSelectedId(notes[0].id);
+    }
+  }, [notes, selectedId]);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -107,6 +115,9 @@ function AnotacoesPage() {
       );
     });
   }, [notes, search, tagFilter]);
+
+  const recent = filtered.slice(0, 5);
+  const older = filtered.slice(5);
 
   const createNote = useMutation({
     mutationFn: async () => {
