@@ -329,6 +329,32 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
     scheduleSave();
   }
 
+  function insertHTML(html: string) {
+    editorRef.current?.focus();
+    document.execCommand("insertHTML", false, html);
+    scheduleSave();
+  }
+
+  function insertChecklist() {
+    insertHTML(
+      '<ul class="checklist"><li><input type="checkbox" />&nbsp;Item</li></ul><p><br/></p>'
+    );
+  }
+
+  function insertArrowList() {
+    insertHTML('<ul class="arrow-list"><li>Item</li></ul><p><br/></p>');
+  }
+
+  // Persist checkbox state: toggle the `checked` attribute on click and save.
+  function onEditorClick(e: React.MouseEvent) {
+    const t = e.target as HTMLElement;
+    if (t instanceof HTMLInputElement && t.type === "checkbox") {
+      if (t.checked) t.setAttribute("checked", "");
+      else t.removeAttribute("checked");
+      scheduleSave();
+    }
+  }
+
   function addTag() {
     const t = tagInput.trim().replace(/^#/, "");
     if (!t) return;
