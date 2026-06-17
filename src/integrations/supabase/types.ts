@@ -151,7 +151,9 @@ export type Database = {
       }
       process_flow_nodes: {
         Row: {
+          comentario: string | null
           cor: string
+          cor_texto: string | null
           created_at: string
           duracao_estimada_minutes: number | null
           etapa_tipo: string
@@ -167,7 +169,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          comentario?: string | null
           cor?: string
+          cor_texto?: string | null
           created_at?: string
           duracao_estimada_minutes?: number | null
           etapa_tipo?: string
@@ -183,7 +187,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          comentario?: string | null
           cor?: string
+          cor_texto?: string | null
           created_at?: string
           duracao_estimada_minutes?: number | null
           etapa_tipo?: string
@@ -224,6 +230,7 @@ export type Database = {
       }
       process_flows: {
         Row: {
+          canvas_extras: Json
           created_at: string
           descricao: string | null
           id: string
@@ -234,6 +241,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          canvas_extras?: Json
           created_at?: string
           descricao?: string | null
           id?: string
@@ -244,6 +252,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          canvas_extras?: Json
           created_at?: string
           descricao?: string | null
           id?: string
