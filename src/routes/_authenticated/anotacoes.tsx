@@ -187,33 +187,73 @@ function AnotacoesPage() {
               ))}
             </div>
           )}
-          <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
             {!isLoading && filtered.length === 0 && (
               <p className="text-sm text-muted-foreground">Nenhuma nota encontrada.</p>
             )}
-            {filtered.map((n) => (
-              <Card
-                key={n.id}
-                onClick={() => setSelectedId(n.id)}
-                className={`p-3 cursor-pointer hover:bg-accent transition ${selectedId === n.id ? "ring-2 ring-primary" : ""}`}
-              >
-                <div className="font-medium truncate">{n.title || "Sem título"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {new Date(n.updated_at).toLocaleString("pt-BR")}
-                </div>
-                <div className="text-xs text-muted-foreground truncate mt-1">
-                  {n.plain_text.slice(0, 80) || "(vazia)"}
-                </div>
-                {n.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {n.tags.slice(0, 4).map((t) => (
-                      <Badge key={t} variant="outline" className="text-[10px] py-0">#{t}</Badge>
+            {recent.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1">
+                  Notas recentes
+                </h2>
+                {recent.map((n) => (
+                  <Card
+                    key={n.id}
+                    onClick={() => setSelectedId(n.id)}
+                    className={`p-3 cursor-pointer hover:bg-accent transition shadow-sm ${
+                      selectedId === n.id ? "ring-2 ring-primary bg-accent/40" : ""
+                    }`}
+                  >
+                    <div className="font-medium truncate">{n.title || "Sem título"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(n.updated_at).toLocaleString("pt-BR")}
+                    </div>
+                    <div className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                      {n.plain_text.slice(0, 140) || "(vazia)"}
+                    </div>
+                    {n.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {n.tags.slice(0, 4).map((t) => (
+                          <Badge key={t} variant="outline" className="text-[10px] py-0">#{t}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
+            {older.length > 0 && (
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setShowOlder((v) => !v)}
+                  className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 hover:text-foreground"
+                >
+                  {showOlder ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  Outras notas ({older.length})
+                </button>
+                {showOlder && (
+                  <div className="space-y-0.5">
+                    {older.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onClick={() => setSelectedId(n.id)}
+                        className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center justify-between gap-2 hover:bg-accent transition ${
+                          selectedId === n.id ? "bg-accent ring-1 ring-primary" : ""
+                        }`}
+                      >
+                        <span className="truncate flex-1">{n.title || "Sem título"}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {new Date(n.updated_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 )}
-              </Card>
-            ))}
+              </div>
+            )}
           </div>
         </aside>
 
