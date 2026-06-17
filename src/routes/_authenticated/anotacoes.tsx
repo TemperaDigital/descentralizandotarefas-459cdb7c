@@ -16,6 +16,7 @@ import {
 import {
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Palette, Plus, Search, Trash2, Download, Share2, X, FileText, FileCode,
+  List, ArrowRight, CheckSquare, Type, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { MicButton } from "@/components/MicButton";
 import { toast } from "sonner";
