@@ -108,12 +108,56 @@ export type Database = {
           },
         ]
       }
+      process_flow_lanes: {
+        Row: {
+          created_at: string
+          flow_id: string
+          id: string
+          nome: string
+          ordem: number
+          orientacao: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          flow_id: string
+          id?: string
+          nome?: string
+          ordem?: number
+          orientacao?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          flow_id?: string
+          id?: string
+          nome?: string
+          ordem?: number
+          orientacao?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_flow_lanes_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "process_flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       process_flow_nodes: {
         Row: {
           cor: string
           created_at: string
+          duracao_estimada_minutes: number | null
+          etapa_tipo: string
           flow_id: string
           id: string
+          lane_id: string | null
           posicao_x: number
           posicao_y: number
           red_flag: boolean
@@ -125,8 +169,11 @@ export type Database = {
         Insert: {
           cor?: string
           created_at?: string
+          duracao_estimada_minutes?: number | null
+          etapa_tipo?: string
           flow_id: string
           id?: string
+          lane_id?: string | null
           posicao_x?: number
           posicao_y?: number
           red_flag?: boolean
@@ -138,8 +185,11 @@ export type Database = {
         Update: {
           cor?: string
           created_at?: string
+          duracao_estimada_minutes?: number | null
+          etapa_tipo?: string
           flow_id?: string
           id?: string
+          lane_id?: string | null
           posicao_x?: number
           posicao_y?: number
           red_flag?: boolean
@@ -157,6 +207,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "process_flow_nodes_lane_id_fkey"
+            columns: ["lane_id"]
+            isOneToOne: false
+            referencedRelation: "process_flow_lanes"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "process_flow_nodes_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
@@ -168,7 +225,9 @@ export type Database = {
       process_flows: {
         Row: {
           created_at: string
+          descricao: string | null
           id: string
+          is_template: boolean
           nome: string
           tipo: string
           updated_at: string
@@ -176,7 +235,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          descricao?: string | null
           id?: string
+          is_template?: boolean
           nome: string
           tipo: string
           updated_at?: string
@@ -184,7 +245,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          descricao?: string | null
           id?: string
+          is_template?: boolean
           nome?: string
           tipo?: string
           updated_at?: string
