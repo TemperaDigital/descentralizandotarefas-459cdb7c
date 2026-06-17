@@ -455,6 +455,26 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
         <Button type="button" variant="ghost" size="icon" onClick={() => cmd("italic")} title="Itálico"><Italic className="h-4 w-4" /></Button>
         <Button type="button" variant="ghost" size="icon" onClick={() => cmd("underline")} title="Sublinhado"><Underline className="h-4 w-4" /></Button>
         <span className="w-px h-5 bg-border mx-1" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" title="Tamanho da fonte"><Type className="h-4 w-4" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => cmd("fontSize", "2")}>
+              <span className="text-xs">A</span><span className="ml-2">Pequeno</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => cmd("fontSize", "3")}>
+              <span className="text-sm">A</span><span className="ml-2">Padrão</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => cmd("fontSize", "5")}>
+              <span className="text-lg">A</span><span className="ml-2">Grande</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button type="button" variant="ghost" size="icon" onClick={() => cmd("insertUnorderedList")} title="Lista com bullets"><List className="h-4 w-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" onClick={insertArrowList} title="Lista com setas"><ArrowRight className="h-4 w-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" onClick={insertChecklist} title="Checklist"><CheckSquare className="h-4 w-4" /></Button>
+        <span className="w-px h-5 bg-border mx-1" />
         <Button type="button" variant="ghost" size="icon" onClick={() => cmd("justifyLeft")} title="Esquerda"><AlignLeft className="h-4 w-4" /></Button>
         <Button type="button" variant="ghost" size="icon" onClick={() => cmd("justifyCenter")} title="Centralizado"><AlignCenter className="h-4 w-4" /></Button>
         <Button type="button" variant="ghost" size="icon" onClick={() => cmd("justifyRight")} title="Direita"><AlignRight className="h-4 w-4" /></Button>
@@ -488,9 +508,20 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
         contentEditable
         suppressContentEditableWarning
         onInput={scheduleSave}
+        onClick={onEditorClick}
         onBlur={doSave}
-        className="min-h-[50vh] border rounded-md p-3 outline-none focus:ring-1 focus:ring-ring text-sm leading-relaxed prose prose-sm max-w-none dark:prose-invert"
+        className="notes-editor min-h-[50vh] border rounded-md p-3 outline-none focus:ring-1 focus:ring-ring text-sm leading-relaxed prose prose-sm max-w-none dark:prose-invert"
       />
+      <style>{`
+        .notes-editor ul.arrow-list { list-style: none; padding-left: 1.25rem; }
+        .notes-editor ul.arrow-list > li { position: relative; padding-left: 1.25rem; }
+        .notes-editor ul.arrow-list > li::before {
+          content: "→"; position: absolute; left: 0; color: hsl(var(--primary));
+        }
+        .notes-editor ul.checklist { list-style: none; padding-left: 0.25rem; }
+        .notes-editor ul.checklist > li { display: flex; align-items: center; gap: 0.5rem; }
+        .notes-editor ul.checklist input[type="checkbox"] { transform: scale(1.1); cursor: pointer; }
+      `}</style>
     </Card>
   );
 }
