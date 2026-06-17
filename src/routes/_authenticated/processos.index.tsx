@@ -23,7 +23,7 @@ import { Copy, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/_authenticated/processos")({
+export const Route = createFileRoute("/_authenticated/processos/")({
   component: ProcessosList,
 });
 
