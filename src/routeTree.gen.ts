@@ -21,6 +21,7 @@ import { Route as AuthenticatedCadastroRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAnotacoesRouteImport } from './routes/_authenticated/anotacoes'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedProcessosIndexRouteImport } from './routes/_authenticated/processos.index'
+import { Route as AuthenticatedCadastroIndexRouteImport } from './routes/_authenticated/cadastro.index'
 import { Route as AuthenticatedProcessosIdRouteImport } from './routes/_authenticated/processos.$id'
 import { Route as AuthenticatedCadastroIdRouteImport } from './routes/_authenticated/cadastro.$id'
 
@@ -85,6 +86,12 @@ const AuthenticatedProcessosIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedProcessosRoute,
   } as any)
+const AuthenticatedCadastroIndexRoute =
+  AuthenticatedCadastroIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedCadastroRoute,
+  } as any)
 const AuthenticatedProcessosIdRoute =
   AuthenticatedProcessosIdRouteImport.update({
     id: '/$id',
@@ -110,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/processos': typeof AuthenticatedProcessosRouteWithChildren
   '/cadastro/$id': typeof AuthenticatedCadastroIdRoute
   '/processos/$id': typeof AuthenticatedProcessosIdRoute
+  '/cadastro/': typeof AuthenticatedCadastroIndexRoute
   '/processos/': typeof AuthenticatedProcessosIndexRoute
 }
 export interface FileRoutesByTo {
@@ -118,12 +126,12 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/anotacoes': typeof AuthenticatedAnotacoesRoute
-  '/cadastro': typeof AuthenticatedCadastroRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/historico': typeof AuthenticatedHistoricoRoute
   '/principal': typeof AuthenticatedPrincipalRoute
   '/cadastro/$id': typeof AuthenticatedCadastroIdRoute
   '/processos/$id': typeof AuthenticatedProcessosIdRoute
+  '/cadastro': typeof AuthenticatedCadastroIndexRoute
   '/processos': typeof AuthenticatedProcessosIndexRoute
 }
 export interface FileRoutesById {
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/processos': typeof AuthenticatedProcessosRouteWithChildren
   '/_authenticated/cadastro/$id': typeof AuthenticatedCadastroIdRoute
   '/_authenticated/processos/$id': typeof AuthenticatedProcessosIdRoute
+  '/_authenticated/cadastro/': typeof AuthenticatedCadastroIndexRoute
   '/_authenticated/processos/': typeof AuthenticatedProcessosIndexRoute
 }
 export interface FileRouteTypes {
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/processos'
     | '/cadastro/$id'
     | '/processos/$id'
+    | '/cadastro/'
     | '/processos/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -166,12 +176,12 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/agenda'
     | '/anotacoes'
-    | '/cadastro'
     | '/configuracoes'
     | '/historico'
     | '/principal'
     | '/cadastro/$id'
     | '/processos/$id'
+    | '/cadastro'
     | '/processos'
   id:
     | '__root__'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authenticated/processos'
     | '/_authenticated/cadastro/$id'
     | '/_authenticated/processos/$id'
+    | '/_authenticated/cadastro/'
     | '/_authenticated/processos/'
   fileRoutesById: FileRoutesById
 }
@@ -284,6 +295,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProcessosIndexRouteImport
       parentRoute: typeof AuthenticatedProcessosRoute
     }
+    '/_authenticated/cadastro/': {
+      id: '/_authenticated/cadastro/'
+      path: '/'
+      fullPath: '/cadastro/'
+      preLoaderRoute: typeof AuthenticatedCadastroIndexRouteImport
+      parentRoute: typeof AuthenticatedCadastroRoute
+    }
     '/_authenticated/processos/$id': {
       id: '/_authenticated/processos/$id'
       path: '/$id'
@@ -303,10 +321,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedCadastroRouteChildren {
   AuthenticatedCadastroIdRoute: typeof AuthenticatedCadastroIdRoute
+  AuthenticatedCadastroIndexRoute: typeof AuthenticatedCadastroIndexRoute
 }
 
 const AuthenticatedCadastroRouteChildren: AuthenticatedCadastroRouteChildren = {
   AuthenticatedCadastroIdRoute: AuthenticatedCadastroIdRoute,
+  AuthenticatedCadastroIndexRoute: AuthenticatedCadastroIndexRoute,
 }
 
 const AuthenticatedCadastroRouteWithChildren =
@@ -363,13 +383,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
