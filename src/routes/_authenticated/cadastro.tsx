@@ -1,7 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { TaskForm } from "@/components/TaskForm";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/cadastro")({
-  head: () => ({ meta: [{ title: "Nova tarefa | Planejador" }] }),
-  component: () => <TaskForm />,
+  component: () => <Outlet />,
 });
