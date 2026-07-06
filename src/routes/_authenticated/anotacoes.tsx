@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,6 +23,16 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/anotacoes")({
   head: () => ({ meta: [{ title: "Anotações | Planejador" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    taskId: typeof search.taskId === "string" ? search.taskId : undefined,
+    titulo: typeof search.titulo === "string" ? search.titulo : undefined,
+    numero:
+      typeof search.numero === "number"
+        ? search.numero
+        : typeof search.numero === "string" && search.numero !== ""
+        ? Number(search.numero)
+        : undefined,
+  }),
   component: AnotacoesPage,
 });
 
@@ -33,6 +43,7 @@ type Note = {
   content: string;
   plain_text: string;
   tags: string[];
+  task_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -70,11 +81,14 @@ function downloadFile(name: string, content: string, mime: string) {
 
 function AnotacoesPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { taskId, titulo: taskTitulo, numero: taskNumero } = Route.useSearch();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showOlder, setShowOlder] = useState(false);
+  const linkedHandledRef = useRef<string | null>(null);
 
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ["notes"],
@@ -90,10 +104,42 @@ function AnotacoesPage() {
 
   // Pre-select most recent note when nothing is selected
   useEffect(() => {
+    if (taskId) return; // linked-note flow decides selection
     if (!selectedId && notes.length > 0 && typeof window !== "undefined" && window.innerWidth >= 768) {
       setSelectedId(notes[0].id);
     }
-  }, [notes, selectedId]);
+  }, [notes, selectedId, taskId]);
+
+  // Linked-note flow: if arriving with ?taskId=..., open existing linked note or create one.
+  useEffect(() => {
+    if (!taskId || isLoading) return;
+    if (linkedHandledRef.current === taskId) return;
+    linkedHandledRef.current = taskId;
+    (async () => {
+      const existing = notes.find((n) => n.task_id === taskId);
+      if (existing) {
+        setSelectedId(existing.id);
+      } else {
+        const { data: u } = await supabase.auth.getUser();
+        if (!u.user) return;
+        const label = taskTitulo ?? "tarefa";
+        const numLabel = taskNumero != null ? `#${taskNumero} — ` : "";
+        const { data, error } = await supabase.from("notes").insert({
+          user_id: u.user.id,
+          title: `Nota — ${numLabel}${label}`,
+          content: "",
+          plain_text: "",
+          tags: [],
+          task_id: taskId,
+        }).select().single();
+        if (error) { toast.error("Erro ao criar nota", { description: error.message }); return; }
+        qc.invalidateQueries({ queryKey: ["notes"] });
+        setSelectedId((data as Note).id);
+      }
+      // Clean the URL so a refresh doesn't recreate/reopen.
+      navigate({ to: "/anotacoes", search: {}, replace: true });
+    })();
+  }, [taskId, isLoading, notes, taskTitulo, taskNumero, navigate, qc]);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
