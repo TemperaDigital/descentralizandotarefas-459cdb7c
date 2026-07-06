@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   ArrowLeft, Download, FileImage, Flag, Plus, StickyNote, ListTodo, Trash2, Palette,
   Settings, ChevronUp, ChevronDown, CheckCircle2, Play, Square, Pencil, Tag, Eraser, MessageSquare, Type,
+  MousePointer2, Circle, Minus, MoveUpRight, Undo2, Redo2, Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { TaskCard } from "@/components/TaskCard";
@@ -51,7 +52,11 @@ type TextColor = "black" | "slate" | "blue" | "red" | "green";
 const ETAPA_LABEL: Record<EtapaTipo, string> = { inicio: "Início", intermediaria: "Intermediária", fim: "Fim" };
 
 const LANE_HEIGHT = 240;
-const LANE_WIDTH = 4000;
+/** Fallback usado só antes do 1º layout (sem nós ainda) — depois disso a largura real vem de laneWidth. */
+const LANE_WIDTH_FALLBACK = 1200;
+/** Paleta forte o bastante pra não se perder no fundo do canvas (#fafafa), cicla por índice da raia. */
+const LANE_BG = ["#dbeafe", "#fef3c7", "#ede9fe", "#dcfce7", "#fee2e2", "#e0f2fe"];
+const MAX_PASTE_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB, mesmo teto do TaskForm
 
 const COLOR_BG: Record<FlowColor, string> = {
   blue: "#dbeafe", coral: "#ffd6cc", red: "#fecaca", green: "#d1fae5",
@@ -68,13 +73,34 @@ const TEXT_COLOR: Record<TextColor, string> = {
 };
 const TEXT_COLORS = Object.keys(TEXT_COLOR) as TextColor[];
 
-const DRAW_COLORS = ["#111827", "#ef4444", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"] as const;
-const DRAW_WIDTHS = { fina: 2, media: 4, grossa: 8 } as const;
+const DRAW_COLORS = [
+  "#111827", "#ef4444", "#f97316", "#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ec4899", "#ffffff",
+] as const;
+const DRAW_WIDTHS = { extrafina: 1, fina: 2, media: 4, grossa: 8, extragrossa: 16 } as const;
 type DrawWidthKey = keyof typeof DRAW_WIDTHS;
 
-type Stroke = { id: string; color: string; width: number; points: [number, number][] };
+/** Ferramenta ativa no canvas — "select" é o padrão (equivalente ao antigo !drawMode). */
+type ToolMode = "select" | "pencil" | "erase" | "rect" | "ellipse" | "line" | "arrow";
+const SHAPE_TOOLS = ["rect", "ellipse", "line", "arrow"] as const;
+type ShapeKind = (typeof SHAPE_TOOLS)[number];
+
+type Stroke = { id: string; color: string; width: number; opacity: number; points: [number, number][] };
+/** Forma reta (retângulo/elipse/linha/seta) — x,y = ponto inicial; w,h = deslocamento até o ponto final. */
+type Shape = {
+  id: string; kind: ShapeKind; x: number; y: number; w: number; h: number;
+  color: string; fill: string | null; width: number; opacity: number;
+};
 type FloatLabel = { id: string; x: number; y: number; text: string; color: string };
-type CanvasExtras = { strokes?: Stroke[]; labels?: FloatLabel[] };
+const FONT_FAMILIES = ["Inter, sans-serif", "Georgia, serif", "'Courier New', monospace", "'Comic Sans MS', cursive"] as const;
+const FONT_SIZES = [12, 14, 16, 20, 24, 32, 48] as const;
+type TextBox = {
+  id: string; x: number; y: number; w: number; h: number; text: string;
+  color: string; fontFamily: string; fontSize: number; orientation: "horizontal" | "vertical";
+};
+type PastedImage = { id: string; x: number; y: number; w: number; h: number; storagePath: string };
+type CanvasExtras = {
+  strokes?: Stroke[]; labels?: FloatLabel[]; shapes?: Shape[]; textboxes?: TextBox[]; images?: PastedImage[];
+};
 
 type NodeData = {
   tipo: "tarefa" | "nota" | "comentario";
@@ -266,14 +292,18 @@ function FlowNode({ id, data, selected }: NodeProps) {
 }
 
 function LaneNode({ data }: NodeProps) {
-  const d = data as unknown as { nome: string; tipo: "responsavel" | "fase"; index: number };
-  const isAlt = d.index % 2 === 1;
+  const d = data as unknown as { nome: string; tipo: "responsavel" | "fase"; index: number; width: number };
+  const bg = LANE_BG[d.index % LANE_BG.length];
   return (
     <div
-      style={{ width: LANE_WIDTH, height: LANE_HEIGHT }}
-      className={`border-b-2 border-dashed border-foreground/20 ${isAlt ? "bg-slate-100/60" : "bg-slate-50/60"}`}
+      style={{ width: d.width, height: LANE_HEIGHT, background: bg }}
+      className="border-b-2 border-dashed border-foreground/30"
     >
-      <div className="sticky left-0 inline-block px-3 py-1 m-2 text-xs font-semibold text-foreground bg-white/90 border border-slate-300 rounded shadow-sm">
+      {/* Nota: position:sticky não funciona aqui — .react-flow__viewport usa
+          transform CSS pra pan/zoom, e transform em ancestral quebra sticky
+          (comportamento de spec do CSS, não bug de implementação). O rótulo
+          fica fixo no início da raia em vez de acompanhar o scroll. */}
+      <div className="inline-block px-3 py-1 m-2 text-xs font-semibold text-foreground bg-white/90 border border-slate-300 rounded shadow-sm">
         {d.nome} <span className="opacity-60 ml-1">· {d.tipo === "responsavel" ? "Responsável" : "Fase"}</span>
       </div>
     </div>
@@ -322,7 +352,127 @@ function LabelNode({ id, data, selected }: NodeProps) {
   );
 }
 
-const nodeTypes = { flow: FlowNode, lane: LaneNode, label: LabelNode };
+/** Caixa de texto livre (Fase 3) — nó real do RF (não overlay SVG), pra edição
+ * de texto/fonte funcionar bem e ganhar drag/resize/seleção de graça do RF. */
+function TextBoxNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as {
+    text: string; color: string; fontFamily: string; fontSize: number;
+    orientation: "horizontal" | "vertical"; w: number; h: number;
+    onChange: (id: string, patch: Partial<TextBox>) => void;
+    onDelete: (id: string) => void;
+  };
+  const [editing, setEditing] = useState(false);
+  const tbId = id.replace(/^textbox-/, "");
+  const textStyle = {
+    color: d.color, fontFamily: d.fontFamily, fontSize: d.fontSize,
+    writingMode: d.orientation === "vertical" ? "vertical-rl" as const : "horizontal-tb" as const,
+  };
+  return (
+    <div
+      className={`group relative bg-white/80 border border-dashed rounded-md p-2 ${selected ? "ring-2 ring-blue-500" : ""}`}
+      style={{ width: d.w, height: d.h, minWidth: 80, minHeight: 40, resize: "both", overflow: "auto" }}
+      onMouseUp={(e) => {
+        const el = e.currentTarget;
+        if (el.offsetWidth !== d.w || el.offsetHeight !== d.h) d.onChange(tbId, { w: el.offsetWidth, h: el.offsetHeight });
+      }}
+    >
+      {editing ? (
+        <Textarea
+          rows={3}
+          autoFocus
+          defaultValue={d.text}
+          onBlur={(e) => { d.onChange(tbId, { text: e.target.value }); setEditing(false); }}
+          className="text-sm nodrag h-full"
+          style={textStyle}
+        />
+      ) : (
+        <div onDoubleClick={() => setEditing(true)} className="cursor-move h-full whitespace-pre-wrap break-words" style={textStyle}>
+          {d.text || "(texto vazio)"}
+        </div>
+      )}
+      <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 nodrag">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-5 w-5 bg-white border" title="Cor"><Palette className="h-3 w-3" /></Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-2">
+            <div className="grid grid-cols-5 gap-1">
+              {DRAW_COLORS.map((c) => (
+                <button key={c} className="h-6 w-6 rounded border-2" style={{ background: c, borderColor: c }}
+                  onClick={() => d.onChange(tbId, { color: c })} title={c} />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-5 w-5 bg-white border" title="Fonte e tamanho"><Settings className="h-3 w-3" /></Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-3 space-y-2 nodrag">
+            <div>
+              <Label className="text-xs">Fonte</Label>
+              <Select value={d.fontFamily} onValueChange={(v) => d.onChange(tbId, { fontFamily: v })}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {FONT_FAMILIES.map((f) => <SelectItem key={f} value={f} style={{ fontFamily: f }}>{f.split(",")[0].replace(/'/g, "")}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Tamanho</Label>
+              <Select value={String(d.fontSize)} onValueChange={(v) => d.onChange(tbId, { fontSize: Number(v) })}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {FONT_SIZES.map((s) => <SelectItem key={s} value={String(s)}>{s}px</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
+        <Button size="icon" variant="ghost" className="h-5 w-5 bg-white border" title="Orientação"
+          onClick={() => d.onChange(tbId, { orientation: d.orientation === "vertical" ? "horizontal" : "vertical" })}>
+          <Type className="h-3 w-3" />
+        </Button>
+        <Button size="icon" variant="ghost" className="h-5 w-5 bg-white border text-destructive" onClick={() => d.onDelete(tbId)} title="Remover">
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Imagem colada (Fase 4) — mesmo padrão de redimensionar do FlowNode. */
+function ImageNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as {
+    url?: string; w: number; h: number;
+    onDelete: (id: string) => void;
+    onResize: (id: string, w: number, h: number) => void;
+  };
+  const imgId = id.replace(/^image-/, "");
+  return (
+    <div
+      className={`group relative border rounded-md bg-white shadow-sm ${selected ? "ring-2 ring-blue-500" : ""}`}
+      style={{ width: d.w, height: d.h, minWidth: 60, minHeight: 60, resize: "both", overflow: "hidden" }}
+      onMouseUp={(e) => {
+        const el = e.currentTarget;
+        if (el.offsetWidth !== d.w || el.offsetHeight !== d.h) d.onResize(imgId, el.offsetWidth, el.offsetHeight);
+      }}
+    >
+      {d.url ? (
+        <img src={d.url} alt="Imagem colada" className="w-full h-full object-contain nodrag" draggable={false} />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">Carregando…</div>
+      )}
+      <div className="absolute -top-2 -right-2 hidden group-hover:flex gap-1 nodrag">
+        <Button size="icon" variant="ghost" className="h-5 w-5 bg-white border text-destructive" onClick={() => d.onDelete(imgId)} title="Remover">
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { flow: FlowNode, lane: LaneNode, label: LabelNode, textbox: TextBoxNode, image: ImageNode };
 
 function ProcessFlowEditor() {
   return (
@@ -333,28 +483,70 @@ function ProcessFlowEditor() {
 }
 
 /** Draw overlay synchronized with React Flow viewport transform. */
+/** Ponta de seta manual (triângulo rotacionado) — SVG <marker> não reherda a cor por-forma de forma confiável. */
+function arrowHeadPoints(x1: number, y1: number, x2: number, y2: number, size = 12): string {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const a1 = angle + (Math.PI * 5) / 6;
+  const a2 = angle - (Math.PI * 5) / 6;
+  return `${x2},${y2} ${x2 + size * Math.cos(a1)},${y2 + size * Math.sin(a1)} ${x2 + size * Math.cos(a2)},${y2 + size * Math.sin(a2)}`;
+}
+
+function ShapeSvg({ s, extraProps }: { s: Shape; extraProps?: Record<string, unknown> }) {
+  const x = Math.min(s.x, s.x + s.w);
+  const y = Math.min(s.y, s.y + s.h);
+  const w = Math.abs(s.w);
+  const h = Math.abs(s.h);
+  const common = { stroke: s.color, strokeWidth: s.width, opacity: s.opacity, ...extraProps };
+  if (s.kind === "rect") return <rect x={x} y={y} width={w} height={h} fill={s.fill ?? "none"} {...common} />;
+  if (s.kind === "ellipse") {
+    return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} fill={s.fill ?? "none"} {...common} />;
+  }
+  if (s.kind === "arrow") {
+    return (
+      <g {...(extraProps ?? {})}>
+        <line x1={s.x} y1={s.y} x2={s.x + s.w} y2={s.y + s.h} stroke={s.color} strokeWidth={s.width} opacity={s.opacity} />
+        <polygon points={arrowHeadPoints(s.x, s.y, s.x + s.w, s.y + s.h)} fill={s.color} opacity={s.opacity} />
+      </g>
+    );
+  }
+  // line
+  return <line x1={s.x} y1={s.y} x2={s.x + s.w} y2={s.y + s.h} fill="none" {...common} />;
+}
+
 function DrawingOverlay({
-  enabled,
+  tool,
   color,
   width,
+  opacity,
+  fill,
   strokes,
+  shapes,
   onStrokeEnd,
+  onShapeEnd,
   onEraseStroke,
-  eraseMode,
+  onEraseShape,
   containerRef,
 }: {
-  enabled: boolean;
+  tool: ToolMode;
   color: string;
   width: number;
+  opacity: number;
+  fill: string | null;
   strokes: Stroke[];
+  shapes: Shape[];
   onStrokeEnd: (s: Stroke) => void;
+  onShapeEnd: (s: Shape) => void;
   onEraseStroke: (id: string) => void;
-  eraseMode: boolean;
+  onEraseShape: (id: string) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { screenToFlowPosition } = useReactFlow();
   const { x, y, zoom } = useViewport();
-  const [current, setCurrent] = useState<Stroke | null>(null);
+  const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
+  const [currentShape, setCurrentShape] = useState<Shape | null>(null);
+  const eraseMode = tool === "erase";
+  const isShapeTool = (SHAPE_TOOLS as readonly string[]).includes(tool);
+  const enabled = tool === "pencil" || isShapeTool || eraseMode;
 
   const flowPoint = useCallback((clientX: number, clientY: number) => {
     const p = screenToFlowPosition({ x: clientX, y: clientY });
@@ -368,16 +560,29 @@ function DrawingOverlay({
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      const pt = flowPoint(e.clientX, e.clientY);
-      setCurrent({ id: crypto.randomUUID(), color, width, points: [pt] });
+      const [px, py] = flowPoint(e.clientX, e.clientY);
+      if (tool === "pencil") {
+        setCurrentStroke({ id: crypto.randomUUID(), color, width, opacity, points: [[px, py]] });
+      } else if (isShapeTool) {
+        setCurrentShape({ id: crypto.randomUUID(), kind: tool as ShapeKind, x: px, y: py, w: 0, h: 0, color, fill, width, opacity });
+      }
       (e.target as Element).setPointerCapture?.(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
-      setCurrent((c) => c ? { ...c, points: [...c.points, flowPoint(e.clientX, e.clientY)] } : c);
+      const [px, py] = flowPoint(e.clientX, e.clientY);
+      if (tool === "pencil") {
+        setCurrentStroke((c) => c ? { ...c, points: [...c.points, [px, py]] } : c);
+      } else if (isShapeTool) {
+        setCurrentShape((c) => c ? { ...c, w: px - c.x, h: py - c.y } : c);
+      }
     };
     const onUp = () => {
-      setCurrent((c) => {
+      setCurrentStroke((c) => {
         if (c && c.points.length > 1) onStrokeEnd(c);
+        return null;
+      });
+      setCurrentShape((c) => {
+        if (c && (Math.abs(c.w) > 2 || Math.abs(c.h) > 2)) onShapeEnd(c);
         return null;
       });
     };
@@ -389,7 +594,7 @@ function DrawingOverlay({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [enabled, eraseMode, color, width, flowPoint, onStrokeEnd, containerRef]);
+  }, [enabled, eraseMode, tool, isShapeTool, color, width, opacity, fill, flowPoint, onStrokeEnd, onShapeEnd, containerRef]);
 
   const toPath = (pts: [number, number][]) =>
     pts.length === 0 ? "" : `M ${pts[0][0]} ${pts[0][1]} ` + pts.slice(1).map((p) => `L ${p[0]} ${p[1]}`).join(" ");
@@ -397,7 +602,7 @@ function DrawingOverlay({
   return (
     <svg
       className="absolute inset-0 w-full h-full"
-      style={{ pointerEvents: enabled ? "auto" : "none", zIndex: 5, cursor: enabled ? (eraseMode ? "crosshair" : "crosshair") : "default" }}
+      style={{ pointerEvents: enabled ? "auto" : "none", zIndex: 5, cursor: enabled ? "crosshair" : "default" }}
     >
       <g transform={`translate(${x} ${y}) scale(${zoom})`}>
         {strokes.map((s) => (
@@ -406,6 +611,7 @@ function DrawingOverlay({
             d={toPath(s.points)}
             stroke={s.color}
             strokeWidth={s.width}
+            opacity={s.opacity}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -413,16 +619,28 @@ function DrawingOverlay({
             onClick={() => eraseMode && onEraseStroke(s.id)}
           />
         ))}
-        {current && (
+        {shapes.map((s) => (
+          <ShapeSvg
+            key={s.id}
+            s={s}
+            extraProps={{
+              style: { pointerEvents: eraseMode ? "all" : "none", cursor: eraseMode ? "pointer" : "default" },
+              onClick: () => eraseMode && onEraseShape(s.id),
+            }}
+          />
+        ))}
+        {currentStroke && (
           <path
-            d={toPath(current.points)}
-            stroke={current.color}
-            strokeWidth={current.width}
+            d={toPath(currentStroke.points)}
+            stroke={currentStroke.color}
+            strokeWidth={currentStroke.width}
+            opacity={currentStroke.opacity}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         )}
+        {currentShape && <ShapeSvg s={currentShape} />}
       </g>
     </svg>
   );
@@ -433,10 +651,18 @@ function EditorInner() {
   const qc = useQueryClient();
   const { getNodes, screenToFlowPosition } = useReactFlow();
   const flowWrapper = useRef<HTMLDivElement>(null);
+  const ctx = useRouteContext({ from: "/_authenticated" });
+  const user = ctx.user;
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loaded, setLoaded] = useState(false);
+  // Trava "só carrega uma vez": sem isso, qualquer refetch em segundo plano
+  // de `flow` (React Query com staleTime:0 + refetchOnWindowFocus, ver
+  // router.tsx) reaplicava os dados antigos do banco por cima de uma
+  // etiqueta/traço recém-adicionado que ainda não tinha round-trip completo
+  // — é a causa raiz do bug "clico em Etiqueta e não aparece nada".
+  const extrasLoadedRef = useRef(false);
 
   const [pickTaskOpen, setPickTaskOpen] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
@@ -446,13 +672,34 @@ function EditorInner() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Drawing & labels (persisted in process_flows.canvas_extras)
+  // Drawing & annotations (persisted em bloco em process_flows.canvas_extras)
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [shapes, setShapes] = useState<Shape[]>([]);
   const [labels, setLabels] = useState<FloatLabel[]>([]);
-  const [drawMode, setDrawMode] = useState(false);
-  const [eraseMode, setEraseMode] = useState(false);
+  const [textboxes, setTextboxes] = useState<TextBox[]>([]);
+  const [images, setImages] = useState<PastedImage[]>([]);
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const signedForRef = useRef<Set<string>>(new Set());
+  const [tool, setTool] = useState<ToolMode>("select");
   const [drawColor, setDrawColor] = useState<string>(DRAW_COLORS[0]);
   const [drawWidth, setDrawWidth] = useState<DrawWidthKey>("media");
+  const [drawOpacity, setDrawOpacity] = useState(1);
+  const [fillColor, setFillColor] = useState<string | null>(null);
+  const isShapeToolActive = (SHAPE_TOOLS as readonly string[]).includes(tool);
+  const isDrawingTool = tool === "pencil" || isShapeToolActive;
+  const isBlockingTool = isDrawingTool || tool === "erase";
+
+  // Desfazer/Refazer: histórico combinado de nodes/edges/strokes/shapes/
+  // labels/textboxes/images — cobre criar/mover/apagar, não cada edição de
+  // propriedade (cor/comentário/etc), pra não virar 1-undo-por-clique.
+  type HistorySnapshot = {
+    nodes: Node[]; edges: Edge[]; strokes: Stroke[]; shapes: Shape[];
+    labels: FloatLabel[]; textboxes: TextBox[]; images: PastedImage[];
+  };
+  const historyRef = useRef<HistorySnapshot[]>([]);
+  const futureRef = useRef<HistorySnapshot[]>([]);
+  const suppressHistoryRef = useRef(false);
+  const [historyTick, setHistoryTick] = useState(0); // força re-render pra habilitar/desabilitar botões
 
   const { data: flow } = useQuery({
     queryKey: ["process_flow", flowId],
@@ -523,17 +770,156 @@ function EditorInner() {
   }, [flowId]);
 
   const strokesRef = useRef<Stroke[]>([]);
+  const shapesRef = useRef<Shape[]>([]);
   const labelsRef = useRef<FloatLabel[]>([]);
+  const textboxesRef = useRef<TextBox[]>([]);
+  const imagesRef = useRef<PastedImage[]>([]);
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
+  useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
-  const persistStrokes = useCallback(
-    (s: Stroke[]) => saveExtras({ strokes: s, labels: labelsRef.current }),
-    [saveExtras],
-  );
-  const persistLabels = useCallback(
-    (l: FloatLabel[]) => saveExtras({ strokes: strokesRef.current, labels: l }),
-    [saveExtras],
-  );
+  useEffect(() => { textboxesRef.current = textboxes; }, [textboxes]);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+
+  // Toda gravação manda o blob inteiro (saveExtras substitui canvas_extras
+  // por completo) — um único ponto lendo todos os *Ref evita esquecer um
+  // campo numa gravação futura (ver plano: risco de perda silenciosa de dado).
+  const persistAll = useCallback((overrides?: Partial<CanvasExtras>) => {
+    saveExtras({
+      strokes: strokesRef.current,
+      shapes: shapesRef.current,
+      labels: labelsRef.current,
+      textboxes: textboxesRef.current,
+      images: imagesRef.current,
+      ...overrides,
+    });
+  }, [saveExtras]);
+
+  const pushHistory = useCallback(() => {
+    if (suppressHistoryRef.current) return;
+    historyRef.current.push({
+      nodes, edges, strokes: strokesRef.current, shapes: shapesRef.current,
+      labels: labelsRef.current, textboxes: textboxesRef.current, images: imagesRef.current,
+    });
+    if (historyRef.current.length > 50) historyRef.current.shift();
+    futureRef.current = [];
+    setHistoryTick((t) => t + 1);
+  }, [nodes, edges]);
+
+  const applySnapshot = useCallback((snap: HistorySnapshot) => {
+    suppressHistoryRef.current = true;
+    setNodes(snap.nodes);
+    setEdges(snap.edges);
+    setStrokes(snap.strokes);
+    setShapes(snap.shapes);
+    setLabels(snap.labels);
+    setTextboxes(snap.textboxes);
+    setImages(snap.images);
+    persistAll({
+      strokes: snap.strokes, shapes: snap.shapes, labels: snap.labels,
+      textboxes: snap.textboxes, images: snap.images,
+    });
+    // Reposições de nós desfeitas/refeitas também precisam voltar pro banco,
+    // senão o banco fica dessincronizado do estado local até a próxima
+    // gravação não relacionada.
+    for (const n of snap.nodes) {
+      if (n.type === "flow") {
+        updateNodeRemote(n.id, { posicao_x: n.position.x, posicao_y: n.position.y });
+      }
+    }
+    setTimeout(() => { suppressHistoryRef.current = false; }, 0);
+  }, [setNodes, setEdges, persistAll, updateNodeRemote]);
+
+  const undo = useCallback(() => {
+    const snap = historyRef.current.pop();
+    if (!snap) return;
+    futureRef.current.push({
+      nodes, edges, strokes: strokesRef.current, shapes: shapesRef.current,
+      labels: labelsRef.current, textboxes: textboxesRef.current, images: imagesRef.current,
+    });
+    applySnapshot(snap);
+    setHistoryTick((t) => t + 1);
+  }, [nodes, edges, applySnapshot]);
+
+  const redo = useCallback(() => {
+    const snap = futureRef.current.pop();
+    if (!snap) return;
+    historyRef.current.push({
+      nodes, edges, strokes: strokesRef.current, shapes: shapesRef.current,
+      labels: labelsRef.current, textboxes: textboxesRef.current, images: imagesRef.current,
+    });
+    applySnapshot(snap);
+    setHistoryTick((t) => t + 1);
+  }, [nodes, edges, applySnapshot]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
+
+  // Resolve URLs assinadas em lote pra imagens coladas ainda sem URL — só
+  // pros paths novos (signedForRef evita re-assinar a cada re-render).
+  useEffect(() => {
+    const pending = images.map((i) => i.storagePath).filter((p) => !signedForRef.current.has(p));
+    if (pending.length === 0) return;
+    (async () => {
+      pending.forEach((p) => signedForRef.current.add(p));
+      const { data, error } = await supabase.storage.from("task-attachments").createSignedUrls(pending, 3600);
+      if (error) { toast.error("Erro ao carregar imagem", { description: error.message }); return; }
+      setImageUrls((prev) => {
+        const next = { ...prev };
+        for (const r of data ?? []) {
+          if (r.signedUrl && r.path) next[r.path] = r.signedUrl;
+        }
+        return next;
+      });
+    })();
+  }, [images]);
+
+  // Colar screenshot/imagem direto no canvas (Ctrl+V) — mesmo padrão de
+  // handlePaste do TaskForm.tsx, mas upload IMEDIATO (o canvas não tem um
+  // "salvar" explícito como o formulário de tarefa).
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (!user || !e.clipboardData) return;
+      const items = Array.from(e.clipboardData.items).filter((it) => it.type.startsWith("image/"));
+      if (items.length === 0) return;
+      e.preventDefault();
+      for (const item of items) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        if (file.size > MAX_PASTE_IMAGE_BYTES) {
+          toast.error("Imagem muito grande", { description: "Máximo de 10MB por imagem." });
+          continue;
+        }
+        const path = `${user.id}/flow-${flowId}/${Date.now()}-pasted.png`;
+        const { error: upErr } = await supabase.storage.from("task-attachments").upload(path, file);
+        if (upErr) { toast.error("Erro ao colar imagem", { description: upErr.message }); continue; }
+        const wrap = flowWrapper.current?.getBoundingClientRect();
+        const p = wrap
+          ? screenToFlowPosition({ x: wrap.left + wrap.width / 2, y: wrap.top + wrap.height / 2 })
+          : { x: 200, y: 200 };
+        const next: PastedImage = { id: crypto.randomUUID(), x: p.x, y: p.y, w: 300, h: 200, storagePath: path };
+        pushHistory();
+        setImages((imgs) => {
+          const arr = [...imgs, next];
+          persistAll({ images: arr });
+          return arr;
+        });
+        toast.success("Imagem colada no canvas");
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [user, flowId, screenToFlowPosition, persistAll, pushHistory]);
 
   const handleColorChange = useCallback((id: string, cor: FlowColor) => {
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, cor } } : n)));
@@ -577,10 +963,11 @@ function EditorInner() {
   }, [setNodes, updateNodeRemote]);
 
   const handleDeleteNode = useCallback(async (id: string) => {
+    pushHistory();
     setNodes((nds) => nds.filter((n) => n.id !== id));
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     await supabase.from("process_flow_nodes").delete().eq("id", id);
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, pushHistory]);
 
   const handleOpenNode = useCallback((id: string) => {
     setNodes((current) => {
@@ -649,10 +1036,14 @@ function EditorInner() {
   }, [flowId, loaded, decorateNode, setNodes, setEdges]);
 
   useEffect(() => {
-    if (!flow) return;
+    if (!flow || extrasLoadedRef.current) return;
     const extras = (flow.canvas_extras as CanvasExtras | null) ?? {};
-    setStrokes(extras.strokes ?? []);
+    setStrokes((extras.strokes ?? []).map((s) => ({ ...s, opacity: s.opacity ?? 1 })));
+    setShapes(extras.shapes ?? []);
     setLabels(extras.labels ?? []);
+    setTextboxes(extras.textboxes ?? []);
+    setImages(extras.images ?? []);
+    extrasLoadedRef.current = true;
   }, [flow]);
 
   useEffect(() => {
@@ -683,16 +1074,36 @@ function EditorInner() {
   }, [flowId, setEdges]);
 
   const onEdgesDelete = useCallback(async (deleted: Edge[]) => {
+    pushHistory();
     for (const e of deleted) await supabase.from("process_flow_edges").delete().eq("id", e.id);
-  }, []);
+  }, [pushHistory]);
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     if (node.type === "lane") return;
+    pushHistory();
     if (node.type === "label") {
       const labelId = node.id.replace(/^label-/, "");
       setLabels((ls) => {
         const next = ls.map((l) => l.id === labelId ? { ...l, x: node.position.x, y: node.position.y } : l);
-        persistLabels(next);
+        persistAll({ labels: next });
+        return next;
+      });
+      return;
+    }
+    if (node.type === "textbox") {
+      const tbId = node.id.replace(/^textbox-/, "");
+      setTextboxes((ts) => {
+        const next = ts.map((t) => t.id === tbId ? { ...t, x: node.position.x, y: node.position.y } : t);
+        persistAll({ textboxes: next });
+        return next;
+      });
+      return;
+    }
+    if (node.type === "image") {
+      const imgId = node.id.replace(/^image-/, "");
+      setImages((imgs) => {
+        const next = imgs.map((i) => i.id === imgId ? { ...i, x: node.position.x, y: node.position.y } : i);
+        persistAll({ images: next });
         return next;
       });
       return;
@@ -715,7 +1126,7 @@ function EditorInner() {
     updateNodeRemote(node.id, {
       posicao_x: node.position.x, posicao_y: node.position.y, lane_id,
     });
-  }, [updateNodeRemote, lanes, persistLabels, setNodes]);
+  }, [updateNodeRemote, lanes, persistAll, setNodes, pushHistory]);
 
   async function addNoteNode() {
     const center = { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 };
@@ -754,28 +1165,137 @@ function EditorInner() {
       ? screenToFlowPosition({ x: wrap.left + wrap.width / 2, y: wrap.top + wrap.height / 2 })
       : { x: 200, y: 200 };
     const next: FloatLabel = { id: crypto.randomUUID(), x: p.x, y: p.y, text: "Nova etiqueta", color: "#b45309" };
+    pushHistory();
     setLabels((ls) => {
       const arr = [...ls, next];
-      persistLabels(arr);
+      persistAll({ labels: arr });
       return arr;
     });
-  }, [screenToFlowPosition, persistLabels]);
+  }, [screenToFlowPosition, persistAll, pushHistory]);
 
   const updateLabel = useCallback((id: string, patch: Partial<FloatLabel>) => {
     setLabels((ls) => {
       const next = ls.map((l) => l.id === id ? { ...l, ...patch } : l);
-      persistLabels(next);
+      persistAll({ labels: next });
       return next;
     });
-  }, [persistLabels]);
+  }, [persistAll]);
 
   const deleteLabel = useCallback((id: string) => {
+    pushHistory();
     setLabels((ls) => {
       const next = ls.filter((l) => l.id !== id);
-      persistLabels(next);
+      persistAll({ labels: next });
       return next;
     });
-  }, [persistLabels]);
+  }, [persistAll, pushHistory]);
+
+  // Traços/formas: apagar um por vez com a ferramenta "Apagar" (sem modelo
+  // de seleção/arraste — decisão de escopo combinada com o usuário).
+  const handleStrokeEnd = useCallback((s: Stroke) => {
+    pushHistory();
+    setStrokes((prev) => {
+      const next = [...prev, s];
+      persistAll({ strokes: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  const handleEraseStroke = useCallback((id: string) => {
+    pushHistory();
+    setStrokes((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      persistAll({ strokes: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  const handleShapeEnd = useCallback((s: Shape) => {
+    pushHistory();
+    setShapes((prev) => {
+      const next = [...prev, s];
+      persistAll({ shapes: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  const handleEraseShape = useCallback((id: string) => {
+    pushHistory();
+    setShapes((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      persistAll({ shapes: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  // Caixa de texto livre (Fase 3): mesmo padrão de add/update/delete das
+  // etiquetas, renderizada como nó real do React Flow (drag/resize grátis).
+  const addTextBox = useCallback(() => {
+    const wrap = flowWrapper.current?.getBoundingClientRect();
+    const p = wrap
+      ? screenToFlowPosition({ x: wrap.left + wrap.width / 2, y: wrap.top + wrap.height / 2 })
+      : { x: 200, y: 200 };
+    const next: TextBox = {
+      id: crypto.randomUUID(), x: p.x, y: p.y, w: 220, h: 90, text: "Texto livre",
+      color: "#111827", fontFamily: FONT_FAMILIES[0], fontSize: 16, orientation: "horizontal",
+    };
+    pushHistory();
+    setTextboxes((ts) => {
+      const arr = [...ts, next];
+      persistAll({ textboxes: arr });
+      return arr;
+    });
+  }, [screenToFlowPosition, persistAll, pushHistory]);
+
+  const updateTextBox = useCallback((id: string, patch: Partial<TextBox>) => {
+    setTextboxes((ts) => {
+      const next = ts.map((t) => t.id === id ? { ...t, ...patch } : t);
+      persistAll({ textboxes: next });
+      return next;
+    });
+  }, [persistAll]);
+
+  const deleteTextBox = useCallback((id: string) => {
+    pushHistory();
+    setTextboxes((ts) => {
+      const next = ts.filter((t) => t.id !== id);
+      persistAll({ textboxes: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  // Imagem colada (Fase 4) — não apaga o objeto no Storage ao remover do
+  // canvas (fica órfão de propósito, pra Desfazer conseguir restaurar).
+  const deleteImage = useCallback((id: string) => {
+    pushHistory();
+    setImages((imgs) => {
+      const next = imgs.filter((i) => i.id !== id);
+      persistAll({ images: next });
+      return next;
+    });
+  }, [persistAll, pushHistory]);
+
+  const updateImage = useCallback((id: string, w: number, h: number) => {
+    setImages((imgs) => {
+      const next = imgs.map((i) => i.id === id ? { ...i, w, h } : i);
+      persistAll({ images: next });
+      return next;
+    });
+  }, [persistAll]);
+
+  // Ferramenta "Selecionar": tecla Delete numa seleção de nós reais do React
+  // Flow (tarefa/nota/comentário, etiqueta, caixa de texto, imagem) não tinha
+  // NENHUM handler antes — removia só do estado local do RF, sem sincronizar
+  // com o banco nem com labels/textboxes/images. Raias (type "lane") já são
+  // `selectable: false`, nunca chegam aqui.
+  const onNodesDelete = useCallback((deleted: Node[]) => {
+    for (const n of deleted) {
+      if (n.type === "flow") handleDeleteNode(n.id);
+      else if (n.type === "label") deleteLabel(n.id.replace(/^label-/, ""));
+      else if (n.type === "textbox") deleteTextBox(n.id.replace(/^textbox-/, ""));
+      else if (n.type === "image") deleteImage(n.id.replace(/^image-/, ""));
+    }
+  }, [handleDeleteNode, deleteLabel, deleteTextBox, deleteImage]);
 
   async function saveNoteText() {
     if (!noteEditId) return;
@@ -909,12 +1429,22 @@ function EditorInner() {
     await supabase.from("process_flow_lanes").delete().eq("id", id); refetchLanes();
   }
 
+  // Largura dinâmica das raias: calculada a partir dos nós reais (não um
+  // valor fixo gigante), senão o fitView zoom pra fora ao extremo só pra
+  // caber uma faixa vazia enorme, encolhendo o conteúdo real a pontos
+  // minúsculos e apagando visualmente a raia.
+  const laneWidth = useMemo(() => {
+    if (nodes.length === 0) return LANE_WIDTH_FALLBACK;
+    const bounds = getNodesBounds(nodes);
+    return Math.max(LANE_WIDTH_FALLBACK, bounds.x + bounds.width + 400);
+  }, [nodes]);
+
   const allNodes = useMemo<Node[]>(() => {
     const laneNodes: Node[] = lanes.map((l, i) => ({
       id: `lane-${l.id}`,
       type: "lane",
       position: { x: -100, y: i * LANE_HEIGHT },
-      data: { nome: l.nome, tipo: l.tipo, index: i },
+      data: { nome: l.nome, tipo: l.tipo, index: i, width: laneWidth },
       draggable: false, selectable: false,
       zIndex: -1,
     }));
@@ -925,8 +1455,29 @@ function EditorInner() {
       data: { text: l.text, color: l.color, onChange: updateLabel, onDelete: deleteLabel },
       zIndex: 10,
     }));
-    return [...laneNodes, ...nodes, ...labelNodes];
-  }, [nodes, lanes, labels, updateLabel, deleteLabel]);
+    const textboxNodes: Node[] = textboxes.map((t) => ({
+      id: `textbox-${t.id}`,
+      type: "textbox",
+      position: { x: t.x, y: t.y },
+      data: {
+        text: t.text, color: t.color, fontFamily: t.fontFamily, fontSize: t.fontSize,
+        orientation: t.orientation, w: t.w, h: t.h, onChange: updateTextBox, onDelete: deleteTextBox,
+      },
+      zIndex: 10,
+    }));
+    const imageNodes: Node[] = images.map((img) => ({
+      id: `image-${img.id}`,
+      type: "image",
+      position: { x: img.x, y: img.y },
+      data: { url: imageUrls[img.storagePath], w: img.w, h: img.h, onDelete: deleteImage, onResize: updateImage },
+      zIndex: 10,
+    }));
+    return [...laneNodes, ...nodes, ...labelNodes, ...textboxNodes, ...imageNodes];
+  }, [
+    nodes, lanes, labels, laneWidth, updateLabel, deleteLabel,
+    textboxes, updateTextBox, deleteTextBox,
+    images, imageUrls, deleteImage, updateImage,
+  ]);
 
   return (
     <div className="space-y-3">
@@ -969,6 +1520,15 @@ function EditorInner() {
           </Button>
           <Button size="sm" variant="outline" onClick={addFloatLabel}>
             <Tag className="h-4 w-4 mr-1" />Etiqueta
+          </Button>
+          <Button size="sm" variant="outline" onClick={addTextBox}>
+            <Type className="h-4 w-4 mr-1" />Caixa de texto
+          </Button>
+          <Button size="sm" variant="outline" onClick={undo} disabled={historyRef.current.length === 0} title="Desfazer (Ctrl+Z)">
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="outline" onClick={redo} disabled={futureRef.current.length === 0} title="Refazer (Ctrl+Shift+Z)">
+            <Redo2 className="h-4 w-4" />
           </Button>
           <Button size="sm" variant="outline" onClick={runValidation}>
             <CheckCircle2 className="h-4 w-4 mr-1" />Validar
@@ -1030,17 +1590,32 @@ function EditorInner() {
         )}
       </div>
 
-      {/* Pencil toolbar */}
+      {/* Barra de ferramentas do canvas */}
       <div className="flex items-center gap-2 flex-wrap p-2 border rounded-md bg-card">
-        <Button
-          size="sm"
-          variant={drawMode ? "default" : "outline"}
-          onClick={() => { setDrawMode((v) => !v); setEraseMode(false); }}
-          title="Desenho livre"
-        >
-          <Pencil className="h-4 w-4 mr-1" />{drawMode ? "Desenhando" : "Desenhar"}
-        </Button>
-        {drawMode && (
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant={tool === "select" ? "default" : "outline"} onClick={() => setTool("select")} title="Selecionar / arrastar / deletar">
+            <MousePointer2 className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "pencil" ? "default" : "outline"} onClick={() => setTool("pencil")} title="Desenho livre">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "rect" ? "default" : "outline"} onClick={() => setTool("rect")} title="Retângulo">
+            <Square className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "ellipse" ? "default" : "outline"} onClick={() => setTool("ellipse")} title="Elipse">
+            <Circle className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "line" ? "default" : "outline"} onClick={() => setTool("line")} title="Linha reta">
+            <Minus className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "arrow" ? "default" : "outline"} onClick={() => setTool("arrow")} title="Seta">
+            <MoveUpRight className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant={tool === "erase" ? "default" : "outline"} onClick={() => setTool("erase")} title="Apagar traço/forma (um por vez)">
+            <Eraser className="h-4 w-4" />
+          </Button>
+        </div>
+        {isDrawingTool && (
           <>
             <div className="flex items-center gap-1">
               {DRAW_COLORS.map((c) => (
@@ -1050,24 +1625,47 @@ function EditorInner() {
               ))}
             </div>
             <Select value={drawWidth} onValueChange={(v) => setDrawWidth(v as DrawWidthKey)}>
-              <SelectTrigger className="w-28 h-8"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="extrafina">Extrafina</SelectItem>
                 <SelectItem value="fina">Fina</SelectItem>
                 <SelectItem value="media">Média</SelectItem>
                 <SelectItem value="grossa">Grossa</SelectItem>
+                <SelectItem value="extragrossa">Extragrossa</SelectItem>
               </SelectContent>
             </Select>
-            <Button size="sm" variant={eraseMode ? "default" : "outline"} onClick={() => setEraseMode((v) => !v)}>
-              <Eraser className="h-4 w-4 mr-1" />{eraseMode ? "Apagando" : "Apagar"}
-            </Button>
+            <div className="flex items-center gap-1 text-xs">
+              <Label className="text-xs">Opacidade</Label>
+              <input type="range" min={0.1} max={1} step={0.05} value={drawOpacity}
+                onChange={(e) => setDrawOpacity(Number(e.target.value))} className="w-20" />
+            </div>
+            {(tool === "rect" || tool === "ellipse") && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">Preenchimento</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2">
+                  <div className="grid grid-cols-5 gap-1">
+                    <button className="h-6 w-6 rounded border-2 border-dashed border-foreground/40 bg-white"
+                      onClick={() => setFillColor(null)} title="Sem preenchimento" />
+                    {DRAW_COLORS.map((c) => (
+                      <button key={c} className={`h-6 w-6 rounded border-2 ${fillColor === c ? "ring-2 ring-offset-1 ring-foreground" : ""}`}
+                        style={{ background: c, borderColor: c }} onClick={() => setFillColor(c)} title={c} />
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
             <Button size="sm" variant="ghost" onClick={() => {
-              if (!confirm("Apagar todos os desenhos?")) return;
-              setStrokes([]); persistStrokes([]);
+              if (!confirm("Apagar todos os traços e formas?")) return;
+              pushHistory();
+              setStrokes([]); setShapes([]);
+              persistAll({ strokes: [], shapes: [] });
             }}>Limpar tudo</Button>
           </>
         )}
         <span className="text-xs text-muted-foreground ml-auto">
-          Dica: arraste a partir dos pontos azuis nas bordas dos nós para criar setas.
+          Dica: arraste a partir dos pontos azuis nas bordas dos nós para criar setas de fluxo. Ctrl+V cola uma imagem no canvas.
         </span>
       </div>
 
@@ -1080,12 +1678,14 @@ function EditorInner() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onEdgesDelete={onEdgesDelete}
+          onNodesDelete={onNodesDelete}
           onNodeDragStop={onNodeDragStop}
           nodeTypes={nodeTypes}
-          panOnDrag={!drawMode}
-          nodesDraggable={!drawMode}
-          nodesConnectable={!drawMode}
-          elementsSelectable={!drawMode}
+          panOnDrag={!isBlockingTool}
+          nodesDraggable={!isBlockingTool}
+          nodesConnectable={!isBlockingTool}
+          elementsSelectable={!isBlockingTool}
+          deleteKeyCode={["Backspace", "Delete"]}
           fitView
         >
           <Background />
@@ -1093,21 +1693,17 @@ function EditorInner() {
           <MiniMap pannable zoomable />
         </ReactFlow>
         <DrawingOverlay
-          enabled={drawMode}
+          tool={tool}
           color={drawColor}
           width={DRAW_WIDTHS[drawWidth]}
+          opacity={drawOpacity}
+          fill={fillColor}
           strokes={strokes}
-          eraseMode={eraseMode}
-          onStrokeEnd={(s) => {
-            const next = [...strokes, s];
-            setStrokes(next);
-            persistStrokes(next);
-          }}
-          onEraseStroke={(id) => {
-            const next = strokes.filter((s) => s.id !== id);
-            setStrokes(next);
-            persistStrokes(next);
-          }}
+          shapes={shapes}
+          onStrokeEnd={handleStrokeEnd}
+          onShapeEnd={handleShapeEnd}
+          onEraseStroke={handleEraseStroke}
+          onEraseShape={handleEraseShape}
           containerRef={flowWrapper}
         />
       </div>
