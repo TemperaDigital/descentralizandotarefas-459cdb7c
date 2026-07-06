@@ -170,12 +170,15 @@ export type Database = {
           duracao_estimada_minutes: number | null
           etapa_tipo: string
           flow_id: string
+          font_size: number | null
           id: string
           lane_id: string | null
           largura_px: number | null
+          negrito: boolean
           posicao_x: number
           posicao_y: number
           red_flag: boolean
+          sombra: boolean
           task_id: string | null
           texto: string | null
           tipo: string
@@ -190,12 +193,15 @@ export type Database = {
           duracao_estimada_minutes?: number | null
           etapa_tipo?: string
           flow_id: string
+          font_size?: number | null
           id?: string
           lane_id?: string | null
           largura_px?: number | null
+          negrito?: boolean
           posicao_x?: number
           posicao_y?: number
           red_flag?: boolean
+          sombra?: boolean
           task_id?: string | null
           texto?: string | null
           tipo: string
@@ -210,12 +216,15 @@ export type Database = {
           duracao_estimada_minutes?: number | null
           etapa_tipo?: string
           flow_id?: string
+          font_size?: number | null
           id?: string
           lane_id?: string | null
           largura_px?: number | null
+          negrito?: boolean
           posicao_x?: number
           posicao_y?: number
           red_flag?: boolean
+          sombra?: boolean
           task_id?: string | null
           texto?: string | null
           tipo?: string

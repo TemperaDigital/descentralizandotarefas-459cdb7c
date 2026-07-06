@@ -35,7 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   ArrowLeft, Download, FileImage, Flag, Plus, StickyNote, ListTodo, Trash2, Palette,
   Settings, ChevronUp, ChevronDown, CheckCircle2, Play, Square, Pencil, Tag, Eraser, MessageSquare, Type,
-  MousePointer2, Circle, Minus, MoveUpRight, Undo2, Redo2, Image as ImageIcon,
+  MousePointer2, Circle, Minus, MoveUpRight, Undo2, Redo2, Image as ImageIcon, Bold,
 } from "lucide-react";
 import { toast } from "sonner";
 import { TaskCard } from "@/components/TaskCard";
@@ -80,7 +80,7 @@ const DRAW_WIDTHS = { extrafina: 1, fina: 2, media: 4, grossa: 8, extragrossa: 1
 type DrawWidthKey = keyof typeof DRAW_WIDTHS;
 
 /** Ferramenta ativa no canvas — "select" é o padrão (equivalente ao antigo !drawMode). */
-type ToolMode = "select" | "pencil" | "erase" | "rect" | "ellipse" | "line" | "arrow";
+type ToolMode = "select" | "pencil" | "erase" | "rect" | "ellipse" | "line" | "arrow" | "text";
 const SHAPE_TOOLS = ["rect", "ellipse", "line", "arrow"] as const;
 type ShapeKind = (typeof SHAPE_TOOLS)[number];
 
@@ -115,6 +115,9 @@ type NodeData = {
   etapa_tipo: EtapaTipo;
   largura?: number;
   altura?: number;
+  font_size: number | null;
+  negrito: boolean;
+  sombra: boolean;
   onColorChange: (id: string, cor: FlowColor) => void;
   onTextColorChange: (id: string, c: TextColor) => void;
   onRedFlagToggle: (id: string) => void;
@@ -124,6 +127,9 @@ type NodeData = {
   onEtapaChange: (id: string, etapa: EtapaTipo) => void;
   onCommentChange: (id: string, c: string) => void;
   onResize: (id: string, w: number, h: number) => void;
+  onFontSizeChange: (id: string, size: number | null) => void;
+  onBoldToggle: (id: string) => void;
+  onShadowToggle: (id: string) => void;
 };
 
 function FlowNode({ id, data, selected }: NodeProps) {
@@ -139,33 +145,45 @@ function FlowNode({ id, data, selected }: NodeProps) {
   const textColor = TEXT_COLOR[d.cor_texto ?? "black"];
   const bg = isComment ? "#ffffff" : COLOR_BG[d.cor];
   const border = isComment ? "#94a3b8" : COLOR_BORDER[d.cor];
+  const contentTextStyle = {
+    fontSize: d.font_size ?? undefined,
+    fontWeight: d.negrito ? 700 : undefined,
+    textShadow: d.sombra ? "1px 1px 2px rgba(0,0,0,0.35)" : undefined,
+  };
 
+  // Nota: os Handles do React Flow ficam posicionados PELA METADE fora da
+  // borda (translate 50%) — se o overflow/resize morar no MESMO elemento
+  // que os Handles, essa metade externa é cortada pelo overflow:auto/hidden
+  // (e ainda sobra scrollbar visível por cima do que restou). Por isso o
+  // resize/overflow do conteúdo mora num DIV FILHO; o wrapper externo (onde
+  // os Handles vivem) nunca corta nada — ele só acompanha o tamanho do
+  // filho (bloco sem posicionamento próprio "abraça" o filho).
   return (
-    <div
-      title={`${d.tipo === "tarefa" ? (d.taskTitulo ?? "Tarefa") : d.texto ?? ""}\nTipo: ${ETAPA_LABEL[d.etapa_tipo]}${d.duracao_estimada_minutes != null ? `\nDuração: ${d.duracao_estimada_minutes}min` : ""}`}
-      className={`rounded-lg border-2 shadow-sm relative ${etapaClass} ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}`}
-      style={{
-        background: bg,
-        borderColor: border,
-        color: textColor,
-        width: d.largura ?? 200,
-        height: d.altura,
-        minWidth: 160,
-        minHeight: 90,
-        resize: "both",
-        overflow: "auto",
-      }}
-      onMouseUp={(e) => {
-        const el = e.currentTarget;
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
-        if (w !== (d.largura ?? 200) || h !== d.altura) {
-          d.onResize(id, w, h);
-        }
-      }}
-    >
+    <div className="relative" title={`${d.tipo === "tarefa" ? (d.taskTitulo ?? "Tarefa") : d.texto ?? ""}\nTipo: ${ETAPA_LABEL[d.etapa_tipo]}${d.duracao_estimada_minutes != null ? `\nDuração: ${d.duracao_estimada_minutes}min` : ""}`}>
       <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white" />
       <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white" />
+      <div
+        className={`rounded-lg border-2 shadow-sm relative ${etapaClass} ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}`}
+        style={{
+          background: bg,
+          borderColor: border,
+          color: textColor,
+          width: d.largura ?? 200,
+          height: d.altura,
+          minWidth: 160,
+          minHeight: 90,
+          resize: "both",
+          overflow: "hidden",
+        }}
+        onMouseUp={(e) => {
+          const el = e.currentTarget;
+          const w = el.offsetWidth;
+          const h = el.offsetHeight;
+          if (w !== (d.largura ?? 200) || h !== d.altura) {
+            d.onResize(id, w, h);
+          }
+        }}
+      >
       {d.red_flag && (
         <Flag className="absolute -top-2 -right-2 h-5 w-5 text-red-600 fill-red-600 drop-shadow" />
       )}
@@ -179,7 +197,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
             <span className="ml-1 opacity-70">· {d.duracao_estimada_minutes}min</span>
           )}
         </div>
-        <div className="text-sm font-medium whitespace-pre-wrap break-words">
+        <div className="text-sm font-medium whitespace-pre-wrap break-words" style={contentTextStyle}>
           {d.tipo === "tarefa"
             ? d.taskTitulo ?? (d.task_id ? "(tarefa)" : "Sem tarefa vinculada")
             : d.texto || (isComment ? "(comentário vazio)" : "(nota vazia)")}
@@ -214,6 +232,29 @@ function FlowNode({ id, data, selected }: NodeProps) {
                     style={{ borderColor: TEXT_COLOR[c], color: TEXT_COLOR[c] }}
                     onClick={() => d.onTextColorChange(id, c)} title={c}>A</button>
                 ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase opacity-60 mb-1">Tamanho do texto</div>
+              <Select value={String(d.font_size ?? "")} onValueChange={(v) => d.onFontSizeChange(id, v === "auto" ? null : Number(v))}>
+                <SelectTrigger className="h-8 w-full"><SelectValue placeholder="Padrão" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Padrão</SelectItem>
+                  {FONT_SIZES.map((s) => <SelectItem key={s} value={String(s)}>{s}px</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase opacity-60 mb-1">Estilo</div>
+              <div className="flex gap-1">
+                <Button size="sm" variant={d.negrito ? "default" : "outline"} className="h-7 px-2"
+                  onClick={() => d.onBoldToggle(id)} title="Negrito">
+                  <Bold className="h-3 w-3" />
+                </Button>
+                <Button size="sm" variant={d.sombra ? "default" : "outline"} className="h-7 px-2"
+                  onClick={() => d.onShadowToggle(id)} title="Sombra no texto">
+                  <span style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.6)" }}>S</span>
+                </Button>
               </div>
             </div>
           </PopoverContent>
@@ -285,6 +326,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
           ))}
         </div>
       )}
+      </div>
       <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white" />
       <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white" />
     </div>
@@ -360,8 +402,11 @@ function TextBoxNode({ id, data, selected }: NodeProps) {
     orientation: "horizontal" | "vertical"; w: number; h: number;
     onChange: (id: string, patch: Partial<TextBox>) => void;
     onDelete: (id: string) => void;
+    autoEdit?: boolean;
   };
-  const [editing, setEditing] = useState(false);
+  // Lazy init: só olha autoEdit no momento em que este nó nasce (recém-
+  // criado pela ferramenta "Texto"), estilo Paint — abre direto editando.
+  const [editing, setEditing] = useState(() => !!d.autoEdit);
   const tbId = id.replace(/^textbox-/, "");
   const textStyle = {
     color: d.color, fontFamily: d.fontFamily, fontSize: d.fontSize,
@@ -370,7 +415,7 @@ function TextBoxNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={`group relative bg-white/80 border border-dashed rounded-md p-2 ${selected ? "ring-2 ring-blue-500" : ""}`}
-      style={{ width: d.w, height: d.h, minWidth: 80, minHeight: 40, resize: "both", overflow: "auto" }}
+      style={{ width: d.w, height: d.h, minWidth: 80, minHeight: 40, resize: "both", overflow: "hidden" }}
       onMouseUp={(e) => {
         const el = e.currentTarget;
         if (el.offsetWidth !== d.w || el.offsetHeight !== d.h) d.onChange(tbId, { w: el.offsetWidth, h: el.offsetHeight });
@@ -525,6 +570,7 @@ function DrawingOverlay({
   onShapeEnd,
   onEraseStroke,
   onEraseShape,
+  onTextBoxRect,
   containerRef,
 }: {
   tool: ToolMode;
@@ -538,6 +584,7 @@ function DrawingOverlay({
   onShapeEnd: (s: Shape) => void;
   onEraseStroke: (id: string) => void;
   onEraseShape: (id: string) => void;
+  onTextBoxRect: (r: { x: number; y: number; w: number; h: number }) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { screenToFlowPosition } = useReactFlow();
@@ -546,7 +593,8 @@ function DrawingOverlay({
   const [currentShape, setCurrentShape] = useState<Shape | null>(null);
   const eraseMode = tool === "erase";
   const isShapeTool = (SHAPE_TOOLS as readonly string[]).includes(tool);
-  const enabled = tool === "pencil" || isShapeTool || eraseMode;
+  const isTextTool = tool === "text";
+  const enabled = tool === "pencil" || isShapeTool || eraseMode || isTextTool;
 
   const flowPoint = useCallback((clientX: number, clientY: number) => {
     const p = screenToFlowPosition({ x: clientX, y: clientY });
@@ -565,6 +613,9 @@ function DrawingOverlay({
         setCurrentStroke({ id: crypto.randomUUID(), color, width, opacity, points: [[px, py]] });
       } else if (isShapeTool) {
         setCurrentShape({ id: crypto.randomUUID(), kind: tool as ShapeKind, x: px, y: py, w: 0, h: 0, color, fill, width, opacity });
+      } else if (isTextTool) {
+        // Prévia tracejada azul só de exibição — nunca vira uma forma persistida.
+        setCurrentShape({ id: "text-preview", kind: "rect", x: px, y: py, w: 0, h: 0, color: "#3b82f6", fill: null, width: 1.5, opacity: 0.8 });
       }
       (e.target as Element).setPointerCapture?.(e.pointerId);
     };
@@ -572,7 +623,7 @@ function DrawingOverlay({
       const [px, py] = flowPoint(e.clientX, e.clientY);
       if (tool === "pencil") {
         setCurrentStroke((c) => c ? { ...c, points: [...c.points, [px, py]] } : c);
-      } else if (isShapeTool) {
+      } else if (isShapeTool || isTextTool) {
         setCurrentShape((c) => c ? { ...c, w: px - c.x, h: py - c.y } : c);
       }
     };
@@ -582,7 +633,19 @@ function DrawingOverlay({
         return null;
       });
       setCurrentShape((c) => {
-        if (c && (Math.abs(c.w) > 2 || Math.abs(c.h) > 2)) onShapeEnd(c);
+        if (!c) return null;
+        if (isTextTool) {
+          const w = Math.abs(c.w);
+          const h = Math.abs(c.h);
+          // Arraste pequeno (ou só um clique): usa um tamanho padrão em vez
+          // de criar uma caixa minúscula sem querer.
+          const rect = w > 20 && h > 20
+            ? { x: Math.min(c.x, c.x + c.w), y: Math.min(c.y, c.y + c.h), w, h }
+            : { x: c.x, y: c.y, w: 220, h: 90 };
+          onTextBoxRect(rect);
+        } else if (isShapeTool && (Math.abs(c.w) > 2 || Math.abs(c.h) > 2)) {
+          onShapeEnd(c);
+        }
         return null;
       });
     };
@@ -594,7 +657,7 @@ function DrawingOverlay({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [enabled, eraseMode, tool, isShapeTool, color, width, opacity, fill, flowPoint, onStrokeEnd, onShapeEnd, containerRef]);
+  }, [enabled, eraseMode, tool, isShapeTool, isTextTool, color, width, opacity, fill, flowPoint, onStrokeEnd, onShapeEnd, onTextBoxRect, containerRef]);
 
   const toPath = (pts: [number, number][]) =>
     pts.length === 0 ? "" : `M ${pts[0][0]} ${pts[0][1]} ` + pts.slice(1).map((p) => `L ${p[0]} ${p[1]}`).join(" ");
@@ -640,7 +703,9 @@ function DrawingOverlay({
             strokeLinejoin="round"
           />
         )}
-        {currentShape && <ShapeSvg s={currentShape} />}
+        {currentShape && (
+          <ShapeSvg s={currentShape} extraProps={isTextTool ? { strokeDasharray: "6 4" } : undefined} />
+        )}
       </g>
     </svg>
   );
@@ -649,7 +714,7 @@ function DrawingOverlay({
 function EditorInner() {
   const { id: flowId } = Route.useParams();
   const qc = useQueryClient();
-  const { getNodes, screenToFlowPosition } = useReactFlow();
+  const { getNodes, screenToFlowPosition, setCenter, getZoom } = useReactFlow();
   const flowWrapper = useRef<HTMLDivElement>(null);
   const ctx = useRouteContext({ from: "/_authenticated" });
   const user = ctx.user;
@@ -687,7 +752,7 @@ function EditorInner() {
   const [fillColor, setFillColor] = useState<string | null>(null);
   const isShapeToolActive = (SHAPE_TOOLS as readonly string[]).includes(tool);
   const isDrawingTool = tool === "pencil" || isShapeToolActive;
-  const isBlockingTool = isDrawingTool || tool === "erase";
+  const isBlockingTool = isDrawingTool || tool === "erase" || tool === "text";
 
   // Desfazer/Refazer: histórico combinado de nodes/edges/strokes/shapes/
   // labels/textboxes/images — cobre criar/mover/apagar, não cada edição de
@@ -746,6 +811,9 @@ function EditorInner() {
       lane_id: string | null;
       largura_px: number;
       altura_px: number;
+      font_size: number | null;
+      negrito: boolean;
+      sombra: boolean;
     }>) => {
       setSaving(true);
       const { error } = await supabase.from("process_flow_nodes").update(patch).eq("id", id);
@@ -945,6 +1013,29 @@ function EditorInner() {
     updateNodeRemote(id, { duracao_estimada_minutes: minutes });
   }, [setNodes, updateNodeRemote]);
 
+  const handleFontSizeChange = useCallback((id: string, size: number | null) => {
+    setNodes((nds) => nds.map((n) => n.id === id ? { ...n, data: { ...n.data, font_size: size } } : n));
+    updateNodeRemote(id, { font_size: size });
+  }, [setNodes, updateNodeRemote]);
+
+  const handleBoldToggle = useCallback((id: string) => {
+    setNodes((nds) => nds.map((n) => {
+      if (n.id !== id) return n;
+      const newVal = !(n.data as unknown as NodeData).negrito;
+      updateNodeRemote(id, { negrito: newVal });
+      return { ...n, data: { ...n.data, negrito: newVal } };
+    }));
+  }, [setNodes, updateNodeRemote]);
+
+  const handleShadowToggle = useCallback((id: string) => {
+    setNodes((nds) => nds.map((n) => {
+      if (n.id !== id) return n;
+      const newVal = !(n.data as unknown as NodeData).sombra;
+      updateNodeRemote(id, { sombra: newVal });
+      return { ...n, data: { ...n.data, sombra: newVal } };
+    }));
+  }, [setNodes, updateNodeRemote]);
+
   const handleEtapaChange = useCallback((id: string, etapa: EtapaTipo) => {
     setNodes((nds) => nds.map((n) => n.id === id ? { ...n, data: { ...n.data, etapa_tipo: etapa } } : n));
     updateNodeRemote(id, { etapa_tipo: etapa });
@@ -1002,6 +1093,9 @@ function EditorInner() {
       etapa_tipo: (row.etapa_tipo ?? "intermediaria") as EtapaTipo,
       largura: row.largura_px ?? undefined,
       altura: row.altura_px ?? undefined,
+      font_size: row.font_size ?? null,
+      negrito: row.negrito ?? false,
+      sombra: row.sombra ?? false,
       onColorChange: handleColorChange,
       onTextColorChange: handleTextColorChange,
       onRedFlagToggle: handleRedFlagToggle,
@@ -1011,8 +1105,15 @@ function EditorInner() {
       onEtapaChange: handleEtapaChange,
       onCommentChange: handleCommentChange,
       onResize: handleResize,
+      onFontSizeChange: handleFontSizeChange,
+      onBoldToggle: handleBoldToggle,
+      onShadowToggle: handleShadowToggle,
     } as NodeData as unknown as Record<string, unknown>,
-  }), [taskMap, handleColorChange, handleTextColorChange, handleRedFlagToggle, handleDeleteNode, handleOpenNode, handleDurationChange, handleEtapaChange, handleCommentChange, handleResize]);
+  }), [
+    taskMap, handleColorChange, handleTextColorChange, handleRedFlagToggle, handleDeleteNode,
+    handleOpenNode, handleDurationChange, handleEtapaChange, handleCommentChange, handleResize,
+    handleFontSizeChange, handleBoldToggle, handleShadowToggle,
+  ]);
 
   useEffect(() => {
     if (loaded) return;
@@ -1171,7 +1272,11 @@ function EditorInner() {
       persistAll({ labels: arr });
       return arr;
     });
-  }, [screenToFlowPosition, persistAll, pushHistory]);
+    // Centraliza a view no item recém-criado — sem isso, dependendo do
+    // zoom/pan atual, o usuário não percebe que algo foi criado.
+    setCenter(p.x, p.y, { zoom: Math.max(getZoom(), 0.5), duration: 300 });
+    toast.success("Etiqueta criada");
+  }, [screenToFlowPosition, persistAll, pushHistory, setCenter, getZoom]);
 
   const updateLabel = useCallback((id: string, patch: Partial<FloatLabel>) => {
     setLabels((ls) => {
@@ -1230,14 +1335,17 @@ function EditorInner() {
 
   // Caixa de texto livre (Fase 3): mesmo padrão de add/update/delete das
   // etiquetas, renderizada como nó real do React Flow (drag/resize grátis).
-  const addTextBox = useCallback(() => {
-    const wrap = flowWrapper.current?.getBoundingClientRect();
-    const p = wrap
-      ? screenToFlowPosition({ x: wrap.left + wrap.width / 2, y: wrap.top + wrap.height / 2 })
-      : { x: 200, y: 200 };
+  // Caixa de texto (Fase 3, redesenhada): estilo Paint — o usuário ativa a
+  // ferramenta "Texto" e ARRASTA no canvas pra definir posição+tamanho (o
+  // DrawingOverlay cuida do gesto e chama createTextBoxAt com o retângulo
+  // já em coordenadas de fluxo). Sem isso, criar sempre no centro da tela
+  // dependia de recentralizar a câmera "na mão" — mais frágil e menos
+  // previsível que deixar o próprio usuário escolher onde/quão grande.
+  const [justCreatedTextBoxId, setJustCreatedTextBoxId] = useState<string | null>(null);
+  const createTextBoxAt = useCallback((r: { x: number; y: number; w: number; h: number }) => {
     const next: TextBox = {
-      id: crypto.randomUUID(), x: p.x, y: p.y, w: 220, h: 90, text: "Texto livre",
-      color: "#111827", fontFamily: FONT_FAMILIES[0], fontSize: 16, orientation: "horizontal",
+      id: crypto.randomUUID(), x: r.x, y: r.y, w: Math.max(r.w, 80), h: Math.max(r.h, 40),
+      text: "", color: "#111827", fontFamily: FONT_FAMILIES[0], fontSize: 16, orientation: "horizontal",
     };
     pushHistory();
     setTextboxes((ts) => {
@@ -1245,7 +1353,18 @@ function EditorInner() {
       persistAll({ textboxes: arr });
       return arr;
     });
-  }, [screenToFlowPosition, persistAll, pushHistory]);
+    setJustCreatedTextBoxId(next.id);
+    setTool("select"); // volta pro ponteiro depois de posicionar, já em modo de edição
+  }, [persistAll, pushHistory]);
+
+  // TextBoxNode só lê justCreatedTextBoxId no PRIMEIRO render (useState
+  // lazy init) pra decidir se abre editando — depois disso pode limpar sem
+  // afetar o nó que já nasceu em modo de edição.
+  useEffect(() => {
+    if (!justCreatedTextBoxId) return;
+    const t = setTimeout(() => setJustCreatedTextBoxId(null), 200);
+    return () => clearTimeout(t);
+  }, [justCreatedTextBoxId]);
 
   const updateTextBox = useCallback((id: string, patch: Partial<TextBox>) => {
     setTextboxes((ts) => {
@@ -1462,6 +1581,7 @@ function EditorInner() {
       data: {
         text: t.text, color: t.color, fontFamily: t.fontFamily, fontSize: t.fontSize,
         orientation: t.orientation, w: t.w, h: t.h, onChange: updateTextBox, onDelete: deleteTextBox,
+        autoEdit: t.id === justCreatedTextBoxId,
       },
       zIndex: 10,
     }));
@@ -1475,7 +1595,7 @@ function EditorInner() {
     return [...laneNodes, ...nodes, ...labelNodes, ...textboxNodes, ...imageNodes];
   }, [
     nodes, lanes, labels, laneWidth, updateLabel, deleteLabel,
-    textboxes, updateTextBox, deleteTextBox,
+    textboxes, updateTextBox, deleteTextBox, justCreatedTextBoxId,
     images, imageUrls, deleteImage, updateImage,
   ]);
 
@@ -1520,9 +1640,6 @@ function EditorInner() {
           </Button>
           <Button size="sm" variant="outline" onClick={addFloatLabel}>
             <Tag className="h-4 w-4 mr-1" />Etiqueta
-          </Button>
-          <Button size="sm" variant="outline" onClick={addTextBox}>
-            <Type className="h-4 w-4 mr-1" />Caixa de texto
           </Button>
           <Button size="sm" variant="outline" onClick={undo} disabled={historyRef.current.length === 0} title="Desfazer (Ctrl+Z)">
             <Undo2 className="h-4 w-4" />
@@ -1611,10 +1728,18 @@ function EditorInner() {
           <Button size="sm" variant={tool === "arrow" ? "default" : "outline"} onClick={() => setTool("arrow")} title="Seta">
             <MoveUpRight className="h-4 w-4" />
           </Button>
+          <Button size="sm" variant={tool === "text" ? "default" : "outline"} onClick={() => setTool("text")} title="Caixa de texto — arraste no canvas pra posicionar e dimensionar">
+            <Type className="h-4 w-4" />
+          </Button>
           <Button size="sm" variant={tool === "erase" ? "default" : "outline"} onClick={() => setTool("erase")} title="Apagar traço/forma (um por vez)">
             <Eraser className="h-4 w-4" />
           </Button>
         </div>
+        {tool === "text" && (
+          <span className="text-xs text-muted-foreground">
+            Arraste no canvas pra criar a caixa de texto (ou só clique pra usar o tamanho padrão).
+          </span>
+        )}
         {isDrawingTool && (
           <>
             <div className="flex items-center gap-1">
@@ -1669,7 +1794,7 @@ function EditorInner() {
         </span>
       </div>
 
-      <div ref={flowWrapper} className="border rounded-lg relative overflow-hidden"
+      <div ref={flowWrapper} className="rf-wrapper border rounded-lg relative overflow-hidden"
         style={{ height: "calc(100vh - 380px)", minHeight: 500, background: "#fafafa" }}>
         <ReactFlow
           nodes={allNodes}
@@ -1704,6 +1829,7 @@ function EditorInner() {
           onShapeEnd={handleShapeEnd}
           onEraseStroke={handleEraseStroke}
           onEraseShape={handleEraseShape}
+          onTextBoxRect={createTextBoxAt}
           containerRef={flowWrapper}
         />
       </div>
