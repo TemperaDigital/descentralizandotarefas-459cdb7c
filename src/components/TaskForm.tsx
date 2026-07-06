@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Paperclip, Clipboard, ExternalLink, Eye, Info } from "lucide-react";
+import { Loader2, Paperclip, Clipboard, ExternalLink, Eye, Info, Trash2, StickyNote, Download } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PRIORITY_LABEL, RECURRENCE_LABEL, todayISO, type Shortcut, type Task } from "@/lib/task-utils";
 import { toast } from "sonner";
 import { MicButton } from "@/components/MicButton";
 
 const MAX_FILE = 10 * 1024 * 1024;
+
+type AttachmentPreview = { url: string; name: string; mime: string };
 
 export function TaskForm({ taskId }: { taskId?: string }) {
   const navigate = useNavigate();
@@ -37,6 +56,8 @@ export function TaskForm({ taskId }: { taskId?: string }) {
   const [publicacaoData, setPublicacaoData] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<AttachmentPreview | null>(null);
+  const [noteToDelete, setNoteToDelete] = useState<{ id: string; titulo: string } | null>(null);
 
   const { data: existing } = useQuery({
     queryKey: ["task", taskId],
@@ -73,16 +94,45 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     enabled: !!taskId,
   });
 
-  async function viewAttachment(path: string) {
+  const { data: linkedNotes = [] } = useQuery({
+    queryKey: ["task-notes", taskId],
+    queryFn: async () => {
+      if (!taskId) return [];
+      const { data, error } = await supabase
+        .from("notes")
+        .select("id, titulo, updated_at")
+        .eq("task_id", taskId)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!taskId,
+  });
+
+  async function viewAttachment(att: { storage_path: string; file_name: string; mime_type: string | null }) {
     const { data, error } = await supabase.storage
       .from("task-attachments")
-      .createSignedUrl(path, 60);
+      .createSignedUrl(att.storage_path, 300);
     if (error || !data?.signedUrl) {
       toast.error("Não foi possível abrir o anexo", { description: error?.message });
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    setPreview({ url: data.signedUrl, name: att.file_name, mime: att.mime_type ?? "" });
   }
+
+  const deleteNote = useMutation({
+    mutationFn: async (noteId: string) => {
+      const { error } = await supabase.from("notes").delete().eq("id", noteId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Nota excluída");
+      qc.invalidateQueries({ queryKey: ["task-notes", taskId] });
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      setNoteToDelete(null);
+    },
+    onError: (e: Error) => toast.error("Erro ao excluir nota", { description: e.message }),
+  });
 
   useEffect(() => {
     if (!existing) return;
@@ -101,13 +151,21 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     setPublicacaoData(existing.publicacao_data ?? "");
   }, [existing]);
 
+  function validateSize(file: File): boolean {
+    if (file.size > MAX_FILE) {
+      toast.error(`O arquivo ${file.name} é maior que 10MB e foi bloqueado`);
+      return false;
+    }
+    return true;
+  }
+
   async function handlePaste(e: React.ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) {
+        if (file && validateSize(file)) {
           setPendingFiles((prev) => [...prev, file]);
           toast.success("Imagem anexada da área de transferência");
         }
@@ -117,13 +175,8 @@ export function TaskForm({ taskId }: { taskId?: string }) {
 
   function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    for (const f of files) {
-      if (f.size > MAX_FILE) {
-        toast.error(`${f.name} excede 10 MB`);
-        return;
-      }
-    }
-    setPendingFiles((prev) => [...prev, ...files]);
+    const accepted = files.filter(validateSize);
+    if (accepted.length > 0) setPendingFiles((prev) => [...prev, ...accepted]);
     e.target.value = "";
   }
 
