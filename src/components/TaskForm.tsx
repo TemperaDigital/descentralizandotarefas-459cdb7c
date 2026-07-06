@@ -377,7 +377,7 @@ export function TaskForm({ taskId }: { taskId?: string }) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => viewAttachment(a.storage_path)}
+                    onClick={() => viewAttachment(a)}
                     title="Visualizar anexo"
                   >
                     <Eye className="h-4 w-4 mr-1" /> Visualizar
@@ -400,6 +400,52 @@ export function TaskForm({ taskId }: { taskId?: string }) {
           )}
         </div>
 
+        {taskId && (
+          <div>
+            <Label className="flex items-center gap-1"><StickyNote className="h-4 w-4" /> Notas vinculadas</Label>
+            {linkedNotes.length === 0 ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                Nenhuma nota vinculada.{" "}
+                <Link
+                  to="/anotacoes"
+                  search={{ taskId, titulo, numero: existing?.numero ?? undefined }}
+                  className="underline text-primary"
+                >
+                  Criar nota
+                </Link>
+              </p>
+            ) : (
+              <ul className="mt-2 text-sm space-y-1">
+                {linkedNotes.map((n) => (
+                  <li key={n.id} className="flex items-center justify-between gap-2 border-b border-border/50 py-1">
+                    <Link
+                      to="/anotacoes"
+                      search={{ taskId, titulo, numero: existing?.numero ?? undefined }}
+                      className="truncate hover:underline"
+                      title={n.titulo}
+                    >
+                      {n.titulo || "(sem título)"}
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {new Date(n.updated_at).toLocaleDateString("pt-BR")}
+                      </span>
+                    </Link>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setNoteToDelete({ id: n.id, titulo: n.titulo })}
+                      className="text-destructive"
+                      title="Excluir nota"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end pt-4">
           <Button type="button" variant="outline" onClick={() => navigate({ to: "/principal" })}>Cancelar</Button>
           <Button type="submit" disabled={saving}>
@@ -408,6 +454,73 @@ export function TaskForm({ taskId }: { taskId?: string }) {
           </Button>
         </div>
       </form>
+
+      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="truncate">{preview?.name}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <div className="w-full">
+              {preview.mime.startsWith("image/") ? (
+                <img
+                  src={preview.url}
+                  alt={preview.name}
+                  className="max-h-[75vh] w-auto mx-auto rounded"
+                />
+              ) : preview.mime === "application/pdf" || preview.mime.startsWith("text/") ? (
+                <iframe
+                  src={preview.url}
+                  title={preview.name}
+                  className="w-full h-[75vh] rounded border border-border"
+                />
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Pré-visualização não disponível para este formato ({preview.mime || "desconhecido"}).
+                  Use os botões abaixo para abrir ou baixar o arquivo.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {preview && (
+              <>
+                <Button variant="outline" asChild>
+                  <a href={preview.url} download={preview.name}>
+                    <Download className="h-4 w-4 mr-1" /> Baixar
+                  </a>
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-1" /> Abrir em nova aba
+                  </a>
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setPreview(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!noteToDelete} onOpenChange={(open) => !open && setNoteToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir nota</AlertDialogTitle>
+            <AlertDialogDescription>
+              Excluir a nota "{noteToDelete?.titulo || "(sem título)"}"? Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => noteToDelete && deleteNote.mutate(noteToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
