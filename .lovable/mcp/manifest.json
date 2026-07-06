@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://whiomctudjzjvyhxivui.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "planejador-mcp",
+      "version": "0.1.0",
+      "title": "Planejador de Tarefas"
+    },
+    "tools": [
+      {
+        "name": "list_tasks",
+        "title": "Listar tarefas",
+        "description": "Lista as tarefas do usuário autenticado, com filtros opcionais por status e data.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "status": {
+              "description": "Filtrar por status da tarefa.",
+              "type": "string",
+              "enum": [
+                "pendente",
+                "concluida",
+                "arquivada"
+              ]
+            },
+            "limit": {
+              "description": "Quantidade máxima (padrão 25).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "create_task",
+        "title": "Criar tarefa",
+        "description": "Cria uma nova tarefa para o usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "titulo": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Título da tarefa."
+            },
+            "descricao": {
+              "description": "Descrição detalhada.",
+              "type": "string"
+            },
+            "data": {
+              "description": "Data no formato YYYY-MM-DD. Padrão: hoje.",
+              "type": "string"
+            },
+            "tipo": {
+              "description": "Tipo da tarefa.",
+              "type": "string",
+              "enum": [
+                "profissional",
+                "pessoal"
+              ]
+            },
+            "prioridade": {
+              "description": "Prioridade.",
+              "type": "string",
+              "enum": [
+                "baixa",
+                "media",
+                "alta"
+              ]
+            },
+            "responsavel": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "titulo"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "complete_task",
+        "title": "Concluir tarefa",
+        "description": "Marca uma tarefa como concluída para o usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "ID da tarefa a concluir."
+            },
+            "solucao": {
+              "description": "Descrição da solução aplicada.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_notes",
+        "title": "Listar anotações",
+        "description": "Lista as anotações do usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "search": {
+              "description": "Filtrar por texto no título ou conteúdo.",
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "create_note",
+        "title": "Criar anotação",
+        "description": "Cria uma nova anotação para o usuário autenticado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Título da anotação."
+            },
+            "content": {
+              "type": "string",
+              "description": "Conteúdo da anotação (texto simples ou HTML)."
+            },
+            "tags": {
+              "description": "Etiquetas opcionais.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "title",
+            "content"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
