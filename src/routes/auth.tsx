@@ -17,11 +17,16 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "Acesse o Planejador de Tarefas Diárias." },
     ],
   }),
+  validateSearch: (s: Record<string, unknown>) => ({
+    next: typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//") ? s.next : undefined,
+  }),
   component: AuthPage,
 });
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
+  const afterAuth = next ?? "/principal";
   const [tab, setTab] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,22 +36,22 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/principal", replace: true });
+      if (data.session) window.location.replace(afterAuth);
     });
-  }, [navigate]);
+  }, [navigate, afterAuth]);
 
   async function handleGoogle() {
     setLoading(true);
     try {
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}${afterAuth}`,
       });
       if (result.error) {
         toast.error("Falha no login Google", { description: String(result.error?.message ?? result.error) });
         return;
       }
       if (result.redirected) return;
-      navigate({ to: "/principal", replace: true });
+      window.location.replace(afterAuth);
     } finally {
       setLoading(false);
     }
@@ -56,14 +61,14 @@ function AuthPage() {
     setLoading(true);
     try {
       const result = await lovable.auth.signInWithOAuth("apple", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}${afterAuth}`,
       });
       if (result.error) {
         toast.error("Falha no login Apple", { description: String(result.error?.message ?? result.error) });
         return;
       }
       if (result.redirected) return;
-      navigate({ to: "/principal", replace: true });
+      window.location.replace(afterAuth);
     } finally {
       setLoading(false);
     }
@@ -78,7 +83,7 @@ function AuthPage() {
       toast.error("Erro ao entrar", { description: error.message });
       return;
     }
-    navigate({ to: "/principal", replace: true });
+    window.location.replace(afterAuth);
   }
 
   async function handleSignup(e: React.FormEvent) {
@@ -88,7 +93,7 @@ function AuthPage() {
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: `${window.location.origin}${afterAuth}`,
         data: { full_name: fullName },
       },
     });
