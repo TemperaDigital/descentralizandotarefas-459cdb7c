@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Paperclip, Clipboard, ExternalLink, Eye, Info } from "lucide-react";
+import { Loader2, Paperclip, Clipboard, ExternalLink, Eye, Info, Trash2, StickyNote, Download } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PRIORITY_LABEL, RECURRENCE_LABEL, todayISO, type Shortcut, type Task } from "@/lib/task-utils";
 import { toast } from "sonner";
 import { MicButton } from "@/components/MicButton";
 
 const MAX_FILE = 10 * 1024 * 1024;
+
+type AttachmentPreview = { url: string; name: string; mime: string };
 
 export function TaskForm({ taskId }: { taskId?: string }) {
   const navigate = useNavigate();
@@ -37,6 +56,8 @@ export function TaskForm({ taskId }: { taskId?: string }) {
   const [publicacaoData, setPublicacaoData] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<AttachmentPreview | null>(null);
+  const [noteToDelete, setNoteToDelete] = useState<{ id: string; titulo: string } | null>(null);
 
   const { data: existing } = useQuery({
     queryKey: ["task", taskId],
@@ -73,16 +94,45 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     enabled: !!taskId,
   });
 
-  async function viewAttachment(path: string) {
+  const { data: linkedNotes = [] } = useQuery({
+    queryKey: ["task-notes", taskId],
+    queryFn: async () => {
+      if (!taskId) return [];
+      const { data, error } = await supabase
+        .from("notes")
+        .select("id, title, updated_at")
+        .eq("task_id", taskId)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!taskId,
+  });
+
+  async function viewAttachment(att: { storage_path: string; file_name: string; mime_type: string | null }) {
     const { data, error } = await supabase.storage
       .from("task-attachments")
-      .createSignedUrl(path, 60);
+      .createSignedUrl(att.storage_path, 300);
     if (error || !data?.signedUrl) {
       toast.error("Não foi possível abrir o anexo", { description: error?.message });
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    setPreview({ url: data.signedUrl, name: att.file_name, mime: att.mime_type ?? "" });
   }
+
+  const deleteNote = useMutation({
+    mutationFn: async (noteId: string) => {
+      const { error } = await supabase.from("notes").delete().eq("id", noteId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Nota excluída");
+      qc.invalidateQueries({ queryKey: ["task-notes", taskId] });
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      setNoteToDelete(null);
+    },
+    onError: (e: Error) => toast.error("Erro ao excluir nota", { description: e.message }),
+  });
 
   useEffect(() => {
     if (!existing) return;
@@ -101,13 +151,21 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     setPublicacaoData(existing.publicacao_data ?? "");
   }, [existing]);
 
+  function validateSize(file: File): boolean {
+    if (file.size > MAX_FILE) {
+      toast.error(`O arquivo ${file.name} é maior que 10MB e foi bloqueado`);
+      return false;
+    }
+    return true;
+  }
+
   async function handlePaste(e: React.ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) {
+        if (file && validateSize(file)) {
           setPendingFiles((prev) => [...prev, file]);
           toast.success("Imagem anexada da área de transferência");
         }
@@ -117,13 +175,8 @@ export function TaskForm({ taskId }: { taskId?: string }) {
 
   function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    for (const f of files) {
-      if (f.size > MAX_FILE) {
-        toast.error(`${f.name} excede 10 MB`);
-        return;
-      }
-    }
-    setPendingFiles((prev) => [...prev, ...files]);
+    const accepted = files.filter(validateSize);
+    if (accepted.length > 0) setPendingFiles((prev) => [...prev, ...accepted]);
     e.target.value = "";
   }
 
@@ -324,7 +377,7 @@ export function TaskForm({ taskId }: { taskId?: string }) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => viewAttachment(a.storage_path)}
+                    onClick={() => viewAttachment(a)}
                     title="Visualizar anexo"
                   >
                     <Eye className="h-4 w-4 mr-1" /> Visualizar
@@ -347,6 +400,52 @@ export function TaskForm({ taskId }: { taskId?: string }) {
           )}
         </div>
 
+        {taskId && (
+          <div>
+            <Label className="flex items-center gap-1"><StickyNote className="h-4 w-4" /> Notas vinculadas</Label>
+            {linkedNotes.length === 0 ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                Nenhuma nota vinculada.{" "}
+                <Link
+                  to="/anotacoes"
+                  search={{ taskId, titulo, numero: existing?.numero ?? undefined }}
+                  className="underline text-primary"
+                >
+                  Criar nota
+                </Link>
+              </p>
+            ) : (
+              <ul className="mt-2 text-sm space-y-1">
+                {linkedNotes.map((n) => (
+                  <li key={n.id} className="flex items-center justify-between gap-2 border-b border-border/50 py-1">
+                    <Link
+                      to="/anotacoes"
+                      search={{ taskId, titulo, numero: existing?.numero ?? undefined }}
+                      className="truncate hover:underline"
+                      title={n.title}
+                    >
+                      {n.title || "(sem título)"}
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {new Date(n.updated_at).toLocaleDateString("pt-BR")}
+                      </span>
+                    </Link>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setNoteToDelete({ id: n.id, titulo: n.title })}
+                      className="text-destructive"
+                      title="Excluir nota"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end pt-4">
           <Button type="button" variant="outline" onClick={() => navigate({ to: "/principal" })}>Cancelar</Button>
           <Button type="submit" disabled={saving}>
@@ -355,6 +454,73 @@ export function TaskForm({ taskId }: { taskId?: string }) {
           </Button>
         </div>
       </form>
+
+      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="truncate">{preview?.name}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <div className="w-full">
+              {preview.mime.startsWith("image/") ? (
+                <img
+                  src={preview.url}
+                  alt={preview.name}
+                  className="max-h-[75vh] w-auto mx-auto rounded"
+                />
+              ) : preview.mime === "application/pdf" || preview.mime.startsWith("text/") ? (
+                <iframe
+                  src={preview.url}
+                  title={preview.name}
+                  className="w-full h-[75vh] rounded border border-border"
+                />
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Pré-visualização não disponível para este formato ({preview.mime || "desconhecido"}).
+                  Use os botões abaixo para abrir ou baixar o arquivo.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {preview && (
+              <>
+                <Button variant="outline" asChild>
+                  <a href={preview.url} download={preview.name}>
+                    <Download className="h-4 w-4 mr-1" /> Baixar
+                  </a>
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-1" /> Abrir em nova aba
+                  </a>
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setPreview(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!noteToDelete} onOpenChange={(open) => !open && setNoteToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir nota</AlertDialogTitle>
+            <AlertDialogDescription>
+              Excluir a nota "{noteToDelete?.titulo || "(sem título)"}"? Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => noteToDelete && deleteNote.mutate(noteToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
