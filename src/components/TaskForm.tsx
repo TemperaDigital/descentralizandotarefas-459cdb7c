@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Paperclip, Clipboard, ExternalLink } from "lucide-react";
+import { Loader2, Paperclip, Clipboard, ExternalLink, Eye, Info } from "lucide-react";
 import { PRIORITY_LABEL, RECURRENCE_LABEL, todayISO, type Shortcut, type Task } from "@/lib/task-utils";
 import { toast } from "sonner";
 import { MicButton } from "@/components/MicButton";
@@ -57,6 +57,32 @@ export function TaskForm({ taskId }: { taskId?: string }) {
       return data as Shortcut[];
     },
   });
+
+  const { data: attachments = [] } = useQuery({
+    queryKey: ["task-attachments", taskId],
+    queryFn: async () => {
+      if (!taskId) return [];
+      const { data, error } = await supabase
+        .from("task_attachments")
+        .select("*")
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!taskId,
+  });
+
+  async function viewAttachment(path: string) {
+    const { data, error } = await supabase.storage
+      .from("task-attachments")
+      .createSignedUrl(path, 60);
+    if (error || !data?.signedUrl) {
+      toast.error("Não foi possível abrir o anexo", { description: error?.message });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
 
   useEffect(() => {
     if (!existing) return;
@@ -272,6 +298,9 @@ export function TaskForm({ taskId }: { taskId?: string }) {
 
         <div>
           <Label>Anexos</Label>
+          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+            <Info className="h-3 w-3" /> Tamanho máximo por arquivo: 10 MB.
+          </p>
           <div className="flex gap-2 flex-wrap items-center mt-1">
             <label>
               <input type="file" multiple className="hidden" onChange={onFiles} />
@@ -281,6 +310,29 @@ export function TaskForm({ taskId }: { taskId?: string }) {
             </label>
             <span className="text-xs text-muted-foreground"><Clipboard className="h-3 w-3 inline mr-1" />Cole imagens com Ctrl+V</span>
           </div>
+          {attachments.length > 0 && (
+            <ul className="mt-3 text-sm space-y-1">
+              {attachments.map((a) => (
+                <li key={a.id} className="flex justify-between items-center gap-2">
+                  <span className="truncate">
+                    {a.file_name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({((a.size_bytes ?? 0) / 1024).toFixed(0)} KB)
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => viewAttachment(a.storage_path)}
+                    title="Visualizar anexo"
+                  >
+                    <Eye className="h-4 w-4 mr-1" /> Visualizar
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
           {pendingFiles.length > 0 && (
             <ul className="mt-2 text-sm space-y-1">
               {pendingFiles.map((f, i) => (
