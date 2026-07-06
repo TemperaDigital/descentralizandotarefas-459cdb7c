@@ -36,6 +36,7 @@ export type Database = {
           id: string
           plain_text: string
           tags: string[]
+          task_id: string | null
           title: string
           updated_at: string
           user_id: string
@@ -46,6 +47,7 @@ export type Database = {
           id?: string
           plain_text?: string
           tags?: string[]
+          task_id?: string | null
           title?: string
           updated_at?: string
           user_id: string
@@ -56,11 +58,20 @@ export type Database = {
           id?: string
           plain_text?: string
           tags?: string[]
+          task_id?: string | null
           title?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "notes_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       process_flow_edges: {
         Row: {
@@ -375,6 +386,7 @@ export type Database = {
           data: string
           descricao: string | null
           id: string
+          numero: number | null
           nup: string | null
           origem: string | null
           parent_task_id: string | null
@@ -398,6 +410,7 @@ export type Database = {
           data?: string
           descricao?: string | null
           id?: string
+          numero?: number | null
           nup?: string | null
           origem?: string | null
           parent_task_id?: string | null
@@ -421,6 +434,7 @@ export type Database = {
           data?: string
           descricao?: string | null
           id?: string
+          numero?: number | null
           nup?: string | null
           origem?: string | null
           parent_task_id?: string | null
