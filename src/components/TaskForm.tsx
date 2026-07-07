@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -134,8 +134,17 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     onError: (e: Error) => toast.error("Erro ao excluir nota", { description: e.message }),
   });
 
+  // Trava "só carrega uma vez por tarefa": sem isso, qualquer refetch em
+  // segundo plano de `existing` (React Query com staleTime:0 +
+  // refetchOnWindowFocus:true por padrão, ver router.tsx) reaplicava os
+  // dados antigos do banco por cima de uma edição em andamento — trocar de
+  // aba no meio da digitação apagava o que o usuário tinha acabado de
+  // escrever, sem aviso nenhum. Guarda por `taskId` (não só uma vez pra
+  // sempre) porque este componente pode ser reaproveitado ao navegar direto
+  // de uma tarefa pra outra sem remontar.
+  const syncedTaskIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!existing) return;
+    if (!existing || syncedTaskIdRef.current === taskId) return;
     setTitulo(existing.titulo);
     setDescricao(existing.descricao ?? "");
     setData(existing.data);
@@ -149,7 +158,8 @@ export function TaskForm({ taskId }: { taskId?: string }) {
     setPublicacao(existing.publicacao);
     setPublicacaoNumero(existing.publicacao_numero ?? "");
     setPublicacaoData(existing.publicacao_data ?? "");
-  }, [existing]);
+    syncedTaskIdRef.current = taskId;
+  }, [existing, taskId]);
 
   function validateSize(file: File): boolean {
     if (file.size > MAX_FILE) {

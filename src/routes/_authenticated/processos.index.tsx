@@ -119,6 +119,13 @@ function ProcessosList() {
       if (oErr) throw oErr;
 
       // 2) Insert new flow — always is_template = false on duplicate
+      //    canvas_extras (traços, formas, etiquetas, caixas de texto,
+      //    imagens coladas) precisa ser copiado junto, senão a cópia perde
+      //    toda anotação livre feita no canvas. Nota: imagens coladas
+      //    apontam pro mesmo arquivo no Storage do original (não duplicamos
+      //    o blob) — sem problema hoje porque nada apaga esses arquivos,
+      //    mas uma futura limpeza de órfãos precisa considerar que um
+      //    storage_path pode estar referenciado por mais de um fluxo.
       const { data: newFlow, error: fErr } = await supabase
         .from("process_flows")
         .insert({
@@ -127,6 +134,7 @@ function ProcessosList() {
           tipo: orig.tipo,
           descricao: orig.descricao,
           is_template: false,
+          canvas_extras: orig.canvas_extras,
         })
         .select("id").single();
       if (fErr) throw fErr;
