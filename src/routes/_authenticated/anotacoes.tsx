@@ -604,6 +604,30 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" title="Marcar texto (destacar)"><Highlighter className="h-4 w-4" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <div className="grid grid-cols-4 gap-1 p-1">
+              {HIGHLIGHTS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="h-6 w-6 rounded border"
+                  style={{ background: c }}
+                  onClick={() => applyHighlight(c)}
+                  aria-label={`Marcador ${c}`}
+                />
+              ))}
+            </div>
+            <DropdownMenuItem onClick={clearFormatting}>
+              <Eraser className="h-4 w-4 mr-2" /> Limpar marcação
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button type="button" variant="ghost" size="icon" onClick={insertLink} title="Inserir link"><Link2 className="h-4 w-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" onClick={removeLink} title="Remover link"><Link2Off className="h-4 w-4" /></Button>
         <span className="w-px h-5 bg-border mx-1" />
         <MicButton onResult={insertVoiceText} />
       </div>
@@ -626,6 +650,8 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
         .notes-editor ul.checklist { list-style: none; padding-left: 0.25rem; }
         .notes-editor ul.checklist > li { display: flex; align-items: center; gap: 0.5rem; }
         .notes-editor ul.checklist input[type="checkbox"] { transform: scale(1.1); cursor: pointer; }
+        .notes-editor a { color: #2563eb; text-decoration: underline; cursor: pointer; }
+        .notes-editor a:hover { color: #1d4ed8; }
       `}</style>
     </Card>
   );
