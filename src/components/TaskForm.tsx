@@ -567,6 +567,35 @@ export function TaskForm({ taskId }: { taskId?: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={blockedFiles.length > 0} onOpenChange={(open) => !open && setBlockedFiles([])}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arquivo(s) acima do limite</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  O tamanho máximo permitido por arquivo é <strong>10 MB</strong>. Os arquivos abaixo foram bloqueados e não serão anexados:
+                </p>
+                <ul className="text-sm list-disc pl-5 max-h-48 overflow-auto">
+                  {blockedFiles.map((f, i) => (
+                    <li key={i}>
+                      <span className="font-medium">{f.name}</span>{" "}
+                      <span className="text-muted-foreground">({(f.size / (1024 * 1024)).toFixed(1)} MB)</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-sm text-muted-foreground">
+                  Dica: compacte a imagem/PDF, divida o arquivo em partes menores ou envie apenas os arquivos dentro do limite.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setBlockedFiles([])}>Entendi</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
