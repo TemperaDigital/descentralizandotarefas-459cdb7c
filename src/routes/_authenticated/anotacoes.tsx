@@ -400,7 +400,52 @@ function NoteEditor({ note, onClose, onDelete }: { note: Note; onClose: () => vo
       if (t.checked) t.setAttribute("checked", "");
       else t.removeAttribute("checked");
       scheduleSave();
+      return;
     }
+    const anchor = t.closest("a");
+    if (anchor && anchor instanceof HTMLAnchorElement && anchor.href) {
+      e.preventDefault();
+      window.open(anchor.href, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function applyHighlight(color: string) {
+    editorRef.current?.focus();
+    // hiliteColor is the cross-browser name; fall back to backColor
+    if (!document.execCommand("hiliteColor", false, color)) {
+      document.execCommand("backColor", false, color);
+    }
+    scheduleSave();
+  }
+
+  function clearFormatting() {
+    editorRef.current?.focus();
+    document.execCommand("removeFormat");
+    // removeFormat não limpa background em alguns browsers
+    document.execCommand("hiliteColor", false, "transparent");
+    scheduleSave();
+  }
+
+  function insertLink() {
+    editorRef.current?.focus();
+    const sel = window.getSelection();
+    const selectedText = sel && !sel.isCollapsed ? sel.toString() : "";
+    const url = window.prompt("Cole o endereço (URL) do link:", "https://");
+    if (!url) return;
+    let href = url.trim();
+    if (!/^https?:\/\//i.test(href) && !/^mailto:/i.test(href)) {
+      href = "https://" + href;
+    }
+    const safeText = (selectedText || href).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = `<a href="${href}" target="_blank" rel="noopener noreferrer">${safeText}</a>&nbsp;`;
+    document.execCommand("insertHTML", false, html);
+    scheduleSave();
+  }
+
+  function removeLink() {
+    editorRef.current?.focus();
+    document.execCommand("unlink");
+    scheduleSave();
   }
 
   function addTag() {
